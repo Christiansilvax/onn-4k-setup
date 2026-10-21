@@ -78,7 +78,7 @@ El orden de las primeras apps está en el código (`Prefs.FIRST` en la APK). Si 
 
 | Error | Qué pasó | Qué hacer |
 |---|---|---|
-| **Desactivar el launcher de Google TV** (`pm disable-user ...launcherx`) | Se abre el asistente de recuperación del sistema | **Nunca lo desactives.** El script no lo toca. |
+| **Desactivar el launcher de Google TV** (`pm disable-user ...launcherx`) | Se abre el asistente de recuperación del sistema | El culpable no es `launcherx`, es `setupwraith` (ver abajo). El script no toca ninguno de los dos: deja `launcherx` y fija este launcher como predeterminado. |
 | Probar el botón Home con `adb input keyevent HOME` | Siempre abría Google TV y parecía que no funcionaba | Esa tecla por ADB **no pasa** por el servicio. Prueba con el **botón real del control**. |
 | Reinstalar la APK y quedar sin botones | Reinstalar apaga el servicio de accesibilidad y el lector | Tras cada reinstalación, repite el paso 3 del script (el script ya lo hace). |
 | TV sin sonido en todas las apps | La salida "Automática" mandaba Dolby por HDMI y la TV no lo acepta | Forzar **PCM**: `settings put global encoded_surround_output 1` y **reiniciar**. |
@@ -88,6 +88,24 @@ El orden de las primeras apps está en el código (`Prefs.FIRST` en la APK). Si 
 | Una app IPTV "desapareció" sola | Cambió de paquete o la quitó el usuario | Después de limpiar, revisa con `adb shell pm list packages` que tus apps sigan ahí. |
 | Descargas pesadas por mi cuenta (SDK, JDK) | El usuario prefería bajarlas él | Cada quien baja sus descargas; el script usa solo lo que está en la carpeta. |
 | Abrir pantallas por ADB mientras se prueba | Se abrieron apps por error (Magma, TizenTube) | Prueba con el control en la mano, no con teclas simuladas. |
+
+### Por qué aparece el asistente de recuperación
+El asistente de configuración de Google TV (`com.google.android.tungsten.setupwraith`) también se anota para el botón Home, con su `RecoveryActivity`, y va **antes** que `launcherx`. Mientras `launcherx` está activo no se nota; al desactivarlo, Home cae en el asistente de recuperación. Lo documenta [CleanYourTV para este mismo box](https://github.com/Gathin23/cleanyourtv/blob/main/examples/onn-4k-streaming-box-2023/debloat.txt).
+
+Para ver quién reclama Home:
+```
+adb shell cmd package query-activities -a android.intent.action.MAIN -c android.intent.category.HOME
+```
+
+Si algún día quieres desactivar `launcherx` de verdad, el orden es:
+1. Ajustes → Red e Internet: **olvida tu red Wi-Fi y vuelve a conectarte**. La red guardada en la primera configuración le pertenece a `setupwraith`, y Android la borra al desactivarlo (el box se queda sin Wi-Fi y sin ADB). Compruébalo con `adb shell "dumpsys wifi | grep -o 'cname=[^ ]*'"`: no debe decir `setupwraith`.
+2. `adb shell pm disable-user --user 0 com.google.android.tungsten.setupwraith`
+3. Recién entonces `adb shell pm disable-user --user 0 com.google.android.apps.tv.launcherx`
+4. Confirma con el **botón Home del control** y `adb shell "dumpsys activity activities | grep mFocusedApp"`.
+
+Para deshacer: `adb shell pm enable com.google.android.apps.tv.launcherx` y `adb shell pm enable com.google.android.tungsten.setupwraith`.
+
+No hace falta para usar esta guía: con `launcherx` activo, el servicio de botones ya manda Home a este launcher.
 
 ## Qué NO tocar
 - Servicios de Google (GMS), **Play Store**, WebView.
