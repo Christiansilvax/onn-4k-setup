@@ -68,7 +68,7 @@ Además: no quita apps que guardaron una red Wi-Fi, y si quita el protector de p
 Después **reinicia el TV box**.
 
 ## 5. Configurar los botones (en la TV)
-1. Abre **"Botones del control"** (está en el launcher, arriba a la derecha de "Apps").
+1. Abre **"Botones"** (el ícono del control en la fila "Tus apps" del inicio).
 2. Sigue las pantallas: pulsa el botón del control que quieres cambiar y elige la app.
 3. Típico: botón **YouTube → TizenTube**, botón **Netflix → tu app de IPTV**.
 4. Prueba cada botón. La Play Store ya no debe abrirse.
@@ -76,7 +76,7 @@ Después **reinicia el TV box**.
 Teclas que **no** se pueden remapear (para no quedarte sin control): flechas, OK, Atrás, Home, Encendido.
 
 ## 6. Ordenar el launcher
-El orden de las primeras apps está en el código (`Prefs.FIRST` en la APK). Si el amigo quiere otro orden, hay que pedirme una versión nueva. Lo demás sale alfabético.
+**Mover, ver info o desinstalar una app:** en la fila "Tus apps" del inicio, deja **OK sostenido** sobre la app (o pulsa Menú). Sale un menú con Abrir, Mover, Información de la app y Desinstalar. En *Mover*, usa las flechas izquierda/derecha y pulsa OK o Atrás para terminar; el orden se guarda. Las apps del sistema y "Botones" no muestran *Desinstalar*. Al principio, las primeras apps salen en el orden de `Prefs.FIRST` y el resto alfabético; las apps nuevas aparecen al final.
 
 ---
 
@@ -87,6 +87,7 @@ El orden de las primeras apps está en el código (`Prefs.FIRST` en la APK). Si 
 | **Desactivar el launcher de Google TV** (`pm disable-user ...launcherx`) | Se abre el asistente de recuperación del sistema | **Nunca lo desactives.** El script no lo toca. |
 | Probar el botón Home con `adb input keyevent HOME` | Siempre abría Google TV y parecía que no funcionaba | Esa tecla por ADB **no pasa** por el servicio. Prueba con el **botón real del control**. |
 | Reinstalar la APK y quedar sin botones | Reinstalar apaga el servicio de accesibilidad y el lector | Tras cada reinstalación, repite el paso 3 del script (el script ya lo hace). |
+| Cambiar la llave de firma y perder las asignaciones de botones | Con otra firma hay que desinstalar, y eso borra los datos de la app | Usa siempre la misma `remap.keystore`. Además, los botones y el orden se respaldan en `Documents/RemapBotones/botones.json` en la caja; al reinstalar se recuperan solos. |
 | TV sin sonido en todas las apps | La salida "Automática" mandaba Dolby por HDMI y la TV no lo acepta | Forzar **PCM**: `settings put global encoded_surround_output 1` y **reiniciar**. |
 | Pensar que no había filas en el home | La consulta por ADB no ve las filas de otras apps | No te fíes de eso: las recomendaciones de YouTube sí existen en Google TV, solo se reemplazan cambiando de launcher. |
 | Querer leer el historial de TizenTube | Sus datos están protegidos (app no depurable) | Se lee lo que **reproduce** (MediaSession), no su base de datos. |
@@ -131,6 +132,7 @@ Si algo queda muy mal: Ajustes → Sistema → Restablecer (borra apps y cuentas
 ## Datos técnicos (por si quieres cambiar algo)
 - Paquete de la APK: `com.remap.buttons`. Servicios: `KeyService` (botones y Home), `MediaWatcher` (lee TizenTube).
 - Teclas del control onn: YouTube = BUTTON_3 (keycode 190), Netflix = BUTTON_4 (191).
+- Respaldo: cada cambio de botones u orden se escribe en `/sdcard/Documents/RemapBotones/botones.json` (sobrevive a desinstalar la APK). Si la app arranca sin datos, lo lee y se restaura sola. Necesita el permiso "acceso a todos los archivos", que `instalar.ps1` da con `appops set --uid com.remap.buttons MANAGE_EXTERNAL_STORAGE allow`. Para guardar una copia en el PC: `adb pull /sdcard/Documents/RemapBotones/botones.json`.
 - TizenTube abre videos con `https://www.youtube.com/tv?v=ID` sobre el paquete `io.gh.reisxd.tizentube.cobalt`.
 - Recomendaciones: RSS de los canales de los videos que ya viste (sin claves de API). Si no hay historial, usa unos canales genéricos.
 - Para que las recomendaciones salgan de todas tus suscripciones: exporta `suscripciones.csv` desde Google Takeout (pendiente de implementar).

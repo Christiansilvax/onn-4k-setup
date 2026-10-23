@@ -11,6 +11,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
@@ -36,10 +37,10 @@ public class HomeActivity extends Activity {
     private static final String[] CHANNELS = {"@TED", "@NatGeo", "@veritasium", "@LinusTechTips", "@Kurzgesagt"};
     private static final int BG = 0xFF0B1230;
     private static final int CARD = 0xFF1C2347;
-    private static final int FOCUS = 0xFFFFFFFF;
 
     private final Handler main = new Handler(Looper.getMainLooper());
-    private LinearLayout root, recentRow, recoRow;
+    private LinearLayout root, appsRow, recentRow, recoRow;
+    private AppActions actions;
     private ImageView backdrop;
     private Bitmap shownBackdrop;
     private TextView clock, recentTitle;
@@ -48,6 +49,7 @@ public class HomeActivity extends Activity {
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         prefs = new Prefs(this);
+        prefs.restoreIfEmpty();
         FrameLayout frame = new FrameLayout(this);
         GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
                 new int[]{0xFF1B1038, 0xFF0B1B3F, 0xFF06283D});
@@ -82,11 +84,16 @@ public class HomeActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        refreshApps();
         refreshRecent();
         tick();
     }
 
-    @Override protected void onPause() { super.onPause(); main.removeCallbacksAndMessages(null); }
+    @Override protected void onPause() {
+        super.onPause();
+        main.removeCallbacksAndMessages(null);
+        if (actions != null) actions.stop();
+    }
 
     private void tick() {
         clock.setText(new SimpleDateFormat("h:mm a", Locale.getDefault()).format(new Date()));
@@ -132,25 +139,13 @@ public class HomeActivity extends Activity {
     private void buildTop() {
         LinearLayout top = new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        String[] names = {"Principal", "Apps", "Botones del control"};
-        for (int i = 0; i < names.length; i++) {
-            final int idx = i;
-            TextView t = new TextView(this);
-            t.setText(names[i]);
-            t.setTextSize(18);
-            t.setTextColor(Color.WHITE);
-            t.setPadding(dp(20), dp(10), dp(20), dp(10));
-            t.setFocusable(true);
-            StateListDrawable s = new StateListDrawable();
-            s.addState(new int[]{android.R.attr.state_focused}, box(0x55FFFFFF, 24, 2, FOCUS));
-            s.addState(new int[]{}, box(i == 0 ? 0x33FFFFFF : 0, 24, 0, 0));
-            t.setBackground(s);
-            t.setOnClickListener(v -> {
-                if (idx == 1) startActivity(new Intent(this, AppsActivity.class));
-                else if (idx == 2) startActivity(new Intent(this, MainActivity.class));
-            });
-            top.addView(t);
-        }
+        TextView t = new TextView(this);
+        t.setText("Principal");
+        t.setTextSize(18);
+        t.setTextColor(Color.WHITE);
+        t.setPadding(dp(20), dp(10), dp(20), dp(10));
+        t.setBackground(box(0x33FFFFFF, 24, 0, 0));
+        top.addView(t);
         View sp = new View(this);
         top.addView(sp, new LinearLayout.LayoutParams(0, 1, 1f));
         clock = new TextView(this);
@@ -185,8 +180,17 @@ public class HomeActivity extends Activity {
 
     private void buildApps() {
         title("Tus apps");
-        LinearLayout r = row();
-        for (Prefs.AppEntry a : prefs.listApps()) {
+        appsRow = row();
+    }
+
+    /** Redibuja la fila si cambiaron las apps (instaladas, desinstaladas o movidas en otra pantalla). */
+    private void refreshApps() {
+        List<Prefs.AppEntry> apps = prefs.listApps(true);
+        if (actions != null && actions.shown().equals(Prefs.join(apps))) return;
+        int focused = appsRow.indexOfChild(appsRow.getFocusedChild());
+        appsRow.removeAllViews();
+        actions = new AppActions(this, prefs, appsRow, apps);
+        for (int n = 0; n < apps.size(); n++) {
             LinearLayout c = new LinearLayout(this);
             c.setOrientation(LinearLayout.VERTICAL);
             c.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -195,7 +199,6 @@ public class HomeActivity extends Activity {
             c.setPadding(dp(8), dp(8), dp(8), dp(6));
             // icono redondo sin tarjeta; el aro blanco aparece solo al enfocar
             ImageView iv = new ImageView(this);
-            iv.setImageDrawable(a.icon);
             iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
             iv.setBackgroundColor(0x33FFFFFF);
             iv.setOutlineProvider(new android.view.ViewOutlineProvider() {
@@ -214,7 +217,6 @@ public class HomeActivity extends Activity {
             iv.setForeground(ring);
             c.addView(iv, new LinearLayout.LayoutParams(dp(84), dp(84)));
             TextView t = new TextView(this);
-            t.setText(a.label);
             t.setTextColor(0xDDFFFFFF);
             t.setShadowLayer(6f, 0f, 2f, 0xFF000000);
             t.setPadding(0, dp(8), 0, 0);
@@ -223,16 +225,17 @@ public class HomeActivity extends Activity {
             t.setMaxLines(1);
             t.setEllipsize(android.text.TextUtils.TruncateAt.END);
             c.addView(t, new LinearLayout.LayoutParams(dp(104), ViewGroup.LayoutParams.WRAP_CONTENT));
-            final String pkg = a.pkg;
-            c.setOnClickListener(v -> {
-                Intent i = getPackageManager().getLeanbackLaunchIntentForPackage(pkg);
-                if (i == null) i = getPackageManager().getLaunchIntentForPackage(pkg);
-                if (i != null) startActivity(i);
-            });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             lp.rightMargin = dp(14);
-            r.addView(c, lp);
+            appsRow.addView(c, lp);
+            actions.attach(c);
         }
+        // si habia una app enfocada (p. ej. tras desinstalar), deja el foco cerca
+        if (focused >= 0 && apps.size() > 0) appsRow.getChildAt(Math.min(focused, apps.size() - 1)).requestFocus();
+    }
+
+    @Override public boolean dispatchKeyEvent(KeyEvent e) {
+        return (actions != null && actions.handleKey(e)) || super.dispatchKeyEvent(e);
     }
 
     private void refreshRecent() {

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Banner de Android TV (16:9): el logo del control centrado sobre el mismo azul -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#FF3D5AFE" />
+            <size android:width="320dp" android:height="180dp" />
+        </shape>
+    </item>
+    <item android:drawable="@drawable/icon" android:gravity="center" android:width="160dp" android:height="160dp" />
+</layer-list>

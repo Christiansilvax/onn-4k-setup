@@ -3,9 +3,12 @@
     package="com.remap.buttons">
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <!-- respaldo de botones en Documents/RemapBotones (se concede por adb: appops MANAGE_EXTERNAL_STORAGE) -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
-    <application android:label="Botones del control" android:icon="@drawable/icon" android:banner="@drawable/icon" android:theme="@android:style/Theme.DeviceDefault">
+    <application android:label="Botones del control" android:icon="@drawable/icon" android:banner="@drawable/banner" android:theme="@android:style/Theme.DeviceDefault">
         <activity android:name=".HomeActivity" android:exported="true" android:launchMode="singleTask"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar" android:label="Inicio">
             <intent-filter>
@@ -14,8 +17,6 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
-        <activity android:name=".AppsActivity" android:exported="false"
-            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

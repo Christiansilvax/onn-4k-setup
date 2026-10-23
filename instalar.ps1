@@ -73,6 +73,7 @@ if ($r -match "UPDATE_INCOMPATIBLE") {   # firmada con otra llave (p. ej. remap.
 }
 
 # --- 3. activar servicios (hay que repetirlo cada vez que se reinstala la APK) ---
+A shell appops set --uid com.remap.buttons MANAGE_EXTERNAL_STORAGE allow | Out-Null   # antes del servicio: al conectarse recupera el respaldo de botones en Documents/RemapBotones
 A shell settings put secure enabled_accessibility_services com.remap.buttons/com.remap.buttons.KeyService | Out-Null
 A shell settings put secure accessibility_enabled 1 | Out-Null
 A shell cmd notification allow_listener com.remap.buttons/com.remap.buttons.MediaWatcher | Out-Null

@@ -16,6 +16,8 @@ public class KeyService extends AccessibilityService {
 
     private final Handler main = new Handler(Looper.getMainLooper());
 
+    @Override protected void onServiceConnected() { new Prefs(this).restoreIfEmpty(); }
+
     @Override public void onAccessibilityEvent(AccessibilityEvent e) { }
     @Override public void onInterrupt() { }
 
