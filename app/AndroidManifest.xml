@@ -6,6 +6,8 @@
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <!-- respaldo de botones en Documents/RemapBotones (se concede por adb: appops MANAGE_EXTERNAL_STORAGE) -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <!-- clima con la ubicación real de la caja (se concede por adb: pm grant) -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <application android:label="Botones del control" android:icon="@drawable/icon" android:banner="@drawable/banner" android:theme="@android:style/Theme.DeviceDefault">
@@ -17,6 +19,8 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+        <activity android:name=".SettingsActivity" android:exported="false"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" android:label="Ajustes del launcher" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

@@ -14,11 +14,41 @@ public class KeyService extends AccessibilityService {
     /** Cuando no es null, la proxima tecla se entrega aqui en vez de ejecutarse. */
     static volatile CaptureListener capture;
 
+    private static final String GOOGLE_HOME = "com.google.android.apps.tv.launcherx";
+
     private final Handler main = new Handler(Looper.getMainLooper());
 
-    @Override protected void onServiceConnected() { new Prefs(this).restoreIfEmpty(); }
+    @Override protected void onServiceConnected() {
+        new Prefs(this).restoreIfEmpty();
+        // al encender, el inicio de Google puede aparecer antes que este servicio: se revisa qué hay en pantalla
+        main.postDelayed(this::replaceIfGoogleHome, 1500);
+    }
 
-    @Override public void onAccessibilityEvent(AccessibilityEvent e) { }
+    private void replaceIfGoogleHome() {
+        android.view.accessibility.AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null) return;
+        boolean google = GOOGLE_HOME.equals(String.valueOf(root.getPackageName()));
+        root.recycle();
+        if (google && new LauncherSettings(this).replaceGoogleHome()) openHome();
+    }
+
+    /**
+     * Si aparece la pantalla de inicio de Google TV (al encender la caja o por otra vía), abre el inicio propio.
+     * Solo esa pantalla: el resto de pantallas de Google (ajustes, cuenta…) no se tocan. Se apaga en Ajustes.
+     */
+    @Override public void onAccessibilityEvent(AccessibilityEvent e) {
+        if (e.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return;
+        if (!GOOGLE_HOME.equals(String.valueOf(e.getPackageName()))) return;
+        CharSequence cls = e.getClassName();
+        if (cls == null || !cls.toString().endsWith(".home.HomeActivity")) return;
+        if (new LauncherSettings(this).replaceGoogleHome()) openHome();
+    }
+
+    private void openHome() {
+        Intent h = new Intent(this, HomeActivity.class);
+        h.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        startActivity(h);
+    }
     @Override public void onInterrupt() { }
 
     @Override
@@ -36,11 +66,7 @@ public class KeyService extends AccessibilityService {
 
         // Home abre el launcher propio; el de Google TV se queda con el boton si el servicio se apaga.
         if (k == KeyEvent.KEYCODE_HOME) {
-            if (ev.getAction() == KeyEvent.ACTION_DOWN && ev.getRepeatCount() == 0) {
-                Intent h = new Intent(this, HomeActivity.class);
-                h.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                startActivity(h);
-            }
+            if (ev.getAction() == KeyEvent.ACTION_DOWN && ev.getRepeatCount() == 0) openHome();
             return true;
         }
 

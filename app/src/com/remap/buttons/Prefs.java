@@ -86,44 +86,109 @@ final class Prefs {
         return Build.VERSION.SDK_INT < 30 || Environment.isExternalStorageManager();
     }
 
-    private void backup() {
+    /** Escribe el JSON completo; se llama tras cada cambio (también desde hilos de red, por eso es sincronizado). */
+    void backup() {
         if (!canBackup()) return;
-        try {
-            JSONArray keys = new JSONArray();
-            for (int k : mappedKeys()) {
-                keys.put(new JSONObject().put("keyCode", k).put("boton", KeyNames.of(k))
-                        .put("paquete", getPackage(k)).put("app", getLabel(k)));
-            }
-            JSONArray order = new JSONArray();
-            for (String p : sp.getString("order", "").split(",")) if (!p.isEmpty()) order.put(p);
-            JSONObject root = new JSONObject().put("version", 1).put("botones", keys).put("orden", order);
-            File f = backupFile();
-            f.getParentFile().mkdirs();
-            Files.write(f.toPath(), root.toString(2).getBytes(StandardCharsets.UTF_8));
-        } catch (Exception ignored) { }
+        synchronized (Prefs.class) {
+            try {
+                JSONArray keys = new JSONArray();
+                for (int k : mappedKeys()) {
+                    keys.put(new JSONObject().put("keyCode", k).put("boton", KeyNames.of(k))
+                            .put("paquete", getPackage(k)).put("app", getLabel(k)));
+                }
+                JSONArray order = new JSONArray();
+                for (String p : sp.getString("order", "").split(",")) if (!p.isEmpty()) order.put(p);
+                SharedPreferences v = Videos.sp(ctx);
+                JSONArray channels = new JSONArray();
+                for (String ch : v.getString("ch", "").split(",")) if (!ch.isEmpty()) channels.put(ch);
+                JSONObject settings = new JSONObject();
+                java.util.Map<String, ?> all = LauncherSettings.sp(ctx).getAll();
+                for (String k : LauncherSettings.BACKUP_KEYS) if (all.containsKey(k)) settings.put(k, all.get(k));
+                JSONObject root = new JSONObject().put("version", 2).put("botones", keys).put("orden", order)
+                        .put("historial", toJson(Videos.parse(v.getString("h", "")))).put("canales", channels)
+                        .put("recomendaciones", toJson(Videos.parse(v.getString("reco", ""))))
+                        .put("ajustes", settings);
+                File f = backupFile();
+                f.getParentFile().mkdirs();
+                Files.write(f.toPath(), root.toString(2).getBytes(StandardCharsets.UTF_8));
+            } catch (Exception ignored) { }
+        }
     }
 
-    /** Tras instalar de cero (sin datos) recupera botones y orden del respaldo; si hay datos y no hay respaldo, lo crea. */
+    private static JSONArray toJson(List<String[]> videos) throws Exception {
+        JSONArray a = new JSONArray();
+        for (String[] v : videos) a.put(new JSONObject().put("id", v[0]).put("titulo", v[1]));
+        return a;
+    }
+
+    private static List<String[]> fromJson(JSONArray a) throws Exception {
+        List<String[]> out = new ArrayList<>();
+        for (int i = 0; a != null && i < a.length(); i++) {
+            out.add(new String[]{a.getJSONObject(i).getString("id"), a.getJSONObject(i).getString("titulo")});
+        }
+        return out;
+    }
+
+    /**
+     * Tras instalar de cero recupera del respaldo lo que falte: botones y orden si no hay ninguno, e historial,
+     * canales y recomendaciones si no hay historial. Si hay datos y no hay respaldo, lo crea.
+     */
+    /** Restaurar a mano (Ajustes): descarta lo actual y lee todo del respaldo. Devuelve false si no hay respaldo. */
+    boolean restoreNow() {
+        if (!canBackup() || !backupFile().exists()) return false;
+        sp.edit().clear().commit();
+        Videos.sp(ctx).edit().clear().putBoolean("v2", true).commit();
+        LauncherSettings.sp(ctx).edit().clear().commit();
+        restoreIfEmpty();
+        return true;
+    }
+
     void restoreIfEmpty() {
         if (!canBackup()) return;
-        if (!sp.getAll().isEmpty()) {
-            if (!backupFile().exists()) backup();
+        SharedPreferences v = Videos.sp(ctx);
+        SharedPreferences ls = LauncherSettings.sp(ctx);
+        boolean noButtons = sp.getAll().isEmpty(), noVideos = !v.contains("h"), noSettings = ls.getAll().isEmpty();
+        if (!backupFile().exists()) {
+            if (!noButtons || !noVideos) backup();
             return;
         }
-        if (!backupFile().exists()) return;
+        if (!noButtons && !noVideos && !noSettings) return;
         try {
             JSONObject root = new JSONObject(new String(Files.readAllBytes(backupFile().toPath()), StandardCharsets.UTF_8));
-            SharedPreferences.Editor ed = sp.edit();
-            JSONArray keys = root.optJSONArray("botones");
-            for (int i = 0; keys != null && i < keys.length(); i++) {
-                JSONObject o = keys.getJSONObject(i);
-                ed.putString("k" + o.getInt("keyCode"), o.getString("paquete") + "|" + o.getString("app"));
+            if (noButtons) {
+                SharedPreferences.Editor ed = sp.edit();
+                JSONArray keys = root.optJSONArray("botones");
+                for (int i = 0; keys != null && i < keys.length(); i++) {
+                    JSONObject o = keys.getJSONObject(i);
+                    ed.putString("k" + o.getInt("keyCode"), o.getString("paquete") + "|" + o.getString("app"));
+                }
+                JSONArray order = root.optJSONArray("orden");
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; order != null && i < order.length(); i++) sb.append(i > 0 ? "," : "").append(order.getString(i));
+                if (sb.length() > 0) ed.putString("order", sb.toString());
+                ed.apply();
             }
-            JSONArray order = root.optJSONArray("orden");
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; order != null && i < order.length(); i++) sb.append(i > 0 ? "," : "").append(order.getString(i));
-            if (sb.length() > 0) ed.putString("order", sb.toString());
-            ed.apply();
+            if (noVideos && root.has("historial")) {
+                JSONArray ch = root.optJSONArray("canales");
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; ch != null && i < ch.length(); i++) sb.append(ch.getString(i)).append(',');
+                v.edit().putBoolean("v2", true)
+                        .putString("h", Videos.join(fromJson(root.optJSONArray("historial")), 100))
+                        .putString("ch", sb.toString())
+                        .putString("reco", Videos.join(fromJson(root.optJSONArray("recomendaciones")), 100)).apply();
+            }
+            JSONObject settings = root.optJSONObject("ajustes");
+            if (noSettings && settings != null) {
+                SharedPreferences.Editor ed = ls.edit();
+                for (java.util.Iterator<String> it = settings.keys(); it.hasNext(); ) {
+                    String k = it.next();
+                    Object val = settings.get(k);
+                    if (val instanceof Boolean) ed.putBoolean(k, (Boolean) val);
+                    else if (val instanceof Integer) ed.putInt(k, (Integer) val);
+                    else ed.putString(k, String.valueOf(val));
+                }
+                ed.apply();
+            }
         } catch (Exception ignored) { }
     }
 
@@ -207,6 +272,12 @@ final class Prefs {
         StringBuilder sb = new StringBuilder();
         for (AppEntry a : apps) sb.append(sb.length() > 0 ? "," : "").append(a.pkg);
         return sb.toString();
+    }
+
+    /** Vuelve al orden inicial (Prefs.FIRST y alfabético). */
+    void resetOrder() {
+        sp.edit().remove("order").apply();
+        backup();
     }
 
     /** Guarda el orden de las apps tras moverlas. */

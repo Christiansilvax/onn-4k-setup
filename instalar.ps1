@@ -74,12 +74,14 @@ if ($r -match "UPDATE_INCOMPATIBLE") {   # firmada con otra llave (p. ej. remap.
 
 # --- 3. activar servicios (hay que repetirlo cada vez que se reinstala la APK) ---
 A shell appops set --uid com.remap.buttons MANAGE_EXTERNAL_STORAGE allow | Out-Null   # antes del servicio: al conectarse recupera el respaldo de botones en Documents/RemapBotones
+A shell pm grant com.remap.buttons android.permission.ACCESS_COARSE_LOCATION | Out-Null   # clima con la ubicacion real de la caja
 A shell settings put secure enabled_accessibility_services com.remap.buttons/com.remap.buttons.KeyService | Out-Null
 A shell settings put secure accessibility_enabled 1 | Out-Null
 A shell cmd notification allow_listener com.remap.buttons/com.remap.buttons.MediaWatcher | Out-Null
 
 # --- 4. ajustes del sistema ---
 A shell settings put global encoded_surround_output 1 | Out-Null     # PCM: evita TV sin sonido por HDMI
+A shell settings put secure match_content_frame_rate 2 | Out-Null  # la tele cambia a 24/30/60 Hz segun el video (evita saltos)
 A shell settings put global window_animation_scale 0.5 | Out-Null
 A shell settings put global transition_animation_scale 0.5 | Out-Null
 A shell settings put global animator_duration_scale 0.5 | Out-Null
