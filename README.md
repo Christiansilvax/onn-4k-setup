@@ -68,12 +68,21 @@ Además: no quita apps que guardaron una red Wi-Fi, y si quita el protector de p
 Después **reinicia el TV box**.
 
 ## 5. Configurar los botones (en la TV)
+**Ya vienen configurados:** el script copia `config/botones.json` a la caja (si la caja no tiene su propia configuración) y el launcher la carga al arrancar: botones, orden de las apps y ajustes. La del repo es: botón **YouTube → TizenTube**, botón **Netflix → Xuper Tv NF**. Las apps de los botones tienen que estar instaladas en la caja (por ejemplo con Downloader); si falta una, el botón avisa y se cambia aquí:
+
 1. Abre **"Botones"** (el ícono del control en la fila "Tus apps" del inicio).
 2. Sigue las pantallas: pulsa el botón del control que quieres cambiar y elige la app.
 3. Típico: botón **YouTube → TizenTube**, botón **Netflix → tu app de IPTV**.
 4. Prueba cada botón. La Play Store ya no debe abrirse.
 
 Teclas que **no** se pueden remapear (para no quedarte sin control): flechas, OK, Atrás, Home, Encendido.
+
+### Replicar esta configuración en otras cajas
+1. En la caja que ya está como te gusta: `powershell -ExecutionPolicy Bypass -File instalar.ps1 -Ip <IP> -GuardarConfig` → actualiza `config/botones.json` (botones, orden y ajustes; **sin** historial ni recomendaciones).
+2. Haz commit y push del repo.
+3. En cada caja nueva: instala las mismas apps (TizenTube, la de IPTV…) y corre `instalar.ps1 -Ip <IP>` (con `-SinYoutube`/`-SinNetflix` si quieres). Reinicia: arranca directo en el launcher con todo configurado.
+
+Si la caja ya tenía su propio respaldo (`Documents/RemapBotones/botones.json`), el script no lo pisa.
 
 ## 6. Ordenar el launcher
 **Arranca directo:** al encender la caja (o si por cualquier vía aparece el inicio de Google TV), el servicio de botones lo cambia por este launcher. Se puede apagar en ⚙ Ajustes → Apariencia → "Abrir siempre este inicio".

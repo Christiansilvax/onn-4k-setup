@@ -1,0 +1,29 @@
+{
+    "version":  2,
+    "botones":  [
+                    {
+                        "keyCode":  190,
+                        "boton":  "Botón YouTube",
+                        "paquete":  "io.gh.reisxd.tizentube.cobalt",
+                        "app":  "TizenTube"
+                    },
+                    {
+                        "keyCode":  191,
+                        "boton":  "Botón Netflix",
+                        "paquete":  "com.android.mgstxNF",
+                        "app":  "Xuper Tv NF"
+                    }
+                ],
+    "orden":  [
+                  "com.android.mgstxNF",
+                  "io.gh.reisxd.tizentube.cobalt",
+                  "com.cbs.ca",
+                  "com.esaba.downloader",
+                  "com.remap.buttons",
+                  "com.android.vending",
+                  "com.android.tv.settings"
+              ],
+    "ajustes":  {
+                    "ocultas":  "com.android.tv.settings"
+                }
+}

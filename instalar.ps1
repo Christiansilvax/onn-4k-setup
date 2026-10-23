@@ -1,15 +1,22 @@
 # Ajusta un onn. 4K Streaming Box (Google TV): quita bloat y rastreo, instala el launcher + remapeo de botones.
 # Uso:  powershell -ExecutionPolicy Bypass -File instalar.ps1 -Ip 192.168.1.3 [-SinYoutube] [-SinNetflix]
 #       powershell -ExecutionPolicy Bypass -File instalar.ps1 -Ip 192.168.1.3 -Restaurar
+#       powershell -ExecutionPolicy Bypass -File instalar.ps1 -Ip 192.168.1.3 -GuardarConfig
+# La configuracion (botones, orden de apps y ajustes del launcher) sale de config/botones.json y se copia a la
+# caja si esta no tiene la suya; -GuardarConfig la saca de una caja ya configurada para replicarla en otras.
 param(
     [Parameter(Mandatory = $true)][string]$Ip,
     [switch]$SinYoutube,   # quita YouTube y YouTube Music del sistema (usa TizenTube en su lugar)
     [switch]$SinNetflix,   # quita Netflix del sistema
-    [switch]$Restaurar     # devuelve todo lo que este script quito
+    [switch]$Restaurar,    # devuelve todo lo que este script quito
+    [switch]$GuardarConfig # copia la configuracion de la caja a config/botones.json (sin historial)
 )
 
 $ErrorActionPreference = "Continue"
 $apk = Join-Path $PSScriptRoot "remap.apk"
+$cfg = Join-Path $PSScriptRoot "config\botones.json"
+$respaldo = "/sdcard/Documents/RemapBotones/botones.json"   # el launcher lo lee al arrancar y lo mantiene al dia
+$utf8 = New-Object System.Text.UTF8Encoding $false            # sin BOM: el JSON lo lee Android
 
 # --- localizar adb ---
 $adb = (Get-Command adb -ErrorAction SilentlyContinue).Source
@@ -35,6 +42,21 @@ $modelo = (A shell getprop ro.product.model).Trim()
 if (-not $modelo) { Write-Host "No hay conexion. Revisa la IP y que la depuracion ADB este activada (mira la guia)."; exit 1 }
 Write-Host "Dispositivo: $modelo"
 if ($modelo -notmatch "onn") { Write-Host "OJO: no parece un onn. Seguir puede no ser seguro."; if ((Read-Host "Escribe SI para continuar") -ne "SI") { exit 1 } }
+
+if ($GuardarConfig) {
+    $tmp = Join-Path $env:TEMP "botones-caja.json"
+    A pull $respaldo $tmp | Out-Null
+    if (-not (Test-Path $tmp)) { Write-Host "La caja no tiene respaldo ($respaldo)."; exit 1 }
+    $d = [System.IO.File]::ReadAllText($tmp, $utf8) | ConvertFrom-Json
+    # solo lo replicable: el historial y las recomendaciones son de lo que se vio en esa caja
+    $out = [ordered]@{ version = $d.version; botones = $d.botones; orden = $d.orden; ajustes = $d.ajustes }
+    New-Item -ItemType Directory -Force (Split-Path $cfg) | Out-Null
+    [System.IO.File]::WriteAllText($cfg, ($out | ConvertTo-Json -Depth 5), $utf8)
+    Remove-Item $tmp
+    Write-Host "Guardado en config\botones.json:"
+    foreach ($b in $d.botones) { Write-Host ("  " + $b.boton + " -> " + $b.app) }
+    exit 0
+}
 
 if ($Restaurar) {
     foreach ($p in ($rastreo + $youtube + $netflix)) { "$p -> " + (A shell cmd package install-existing $p) }
@@ -75,6 +97,12 @@ if ($r -match "UPDATE_INCOMPATIBLE") {   # firmada con otra llave (p. ej. remap.
 # --- 3. activar servicios (hay que repetirlo cada vez que se reinstala la APK) ---
 A shell appops set --uid com.remap.buttons MANAGE_EXTERNAL_STORAGE allow | Out-Null   # antes del servicio: al conectarse recupera el respaldo de botones en Documents/RemapBotones
 A shell pm grant com.remap.buttons android.permission.ACCESS_COARSE_LOCATION | Out-Null   # clima con la ubicacion real de la caja
+# configuracion del repo (botones, orden, ajustes): solo si la caja no tiene la suya, para no pisarla
+if ((Test-Path $cfg) -and -not ((A shell "ls $respaldo 2>/dev/null") -match "botones.json")) {
+    A shell mkdir -p /sdcard/Documents/RemapBotones | Out-Null
+    A push $cfg $respaldo | Out-Null
+    Write-Host "Configuracion copiada desde config\botones.json (botones, orden de apps y ajustes)."
+}
 A shell settings put secure enabled_accessibility_services com.remap.buttons/com.remap.buttons.KeyService | Out-Null
 A shell settings put secure accessibility_enabled 1 | Out-Null
 A shell cmd notification allow_listener com.remap.buttons/com.remap.buttons.MediaWatcher | Out-Null
@@ -93,5 +121,5 @@ A shell settings put secure limit_ad_tracking 1 | Out-Null
 A shell cmd package set-home-activity com.remap.buttons/.HomeActivity | Out-Host
 
 Write-Host ""
-Write-Host "Listo. Reinicia el TV box. Luego pulsa Home con el CONTROL (por adb no funciona)."
-Write-Host "Falta, en la TV: abrir 'Botones del control' y elegir la app de cada boton."
+Write-Host "Listo. Reinicia el TV box: arranca directo en el launcher."
+Write-Host "Los botones vienen de config\botones.json. Si alguna app de un boton no esta instalada, instalala (o cambia el boton en Botones)."
