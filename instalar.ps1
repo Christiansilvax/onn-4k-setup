@@ -65,7 +65,12 @@ if ((A shell settings get secure screensaver_components) -match "dreamx") {
 
 # --- 2. instalar la APK ---
 if (-not (Test-Path $apk)) { Write-Host "Falta remap.apk junto al script."; exit 1 }
-A install -r $apk | Out-Host
+$r = A install -r $apk 2>&1 | Out-String; Write-Host $r
+if ($r -match "UPDATE_INCOMPATIBLE") {   # firmada con otra llave (p. ej. remap.keystore nueva): hay que desinstalar antes
+    Write-Host "La APK instalada tiene otra firma. La desinstalo y la vuelvo a instalar (se pierde el historial de 'Seguir mirando')."
+    A uninstall com.remap.buttons | Out-Host
+    A install $apk | Out-Host
+}
 
 # --- 3. activar servicios (hay que repetirlo cada vez que se reinstala la APK) ---
 A shell settings put secure enabled_accessibility_services com.remap.buttons/com.remap.buttons.KeyService | Out-Null

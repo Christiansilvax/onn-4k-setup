@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "deny": [
+      "PowerShell"
+    ],
+    "allow": [
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File compilar.ps1)",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File ./compilar.ps1)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(*/aapt2.exe dump *)",
+      "Bash(*/apksigner.jar verify *)",
+      "Bash(*/javac -version)"
+    ]
+  }
+}

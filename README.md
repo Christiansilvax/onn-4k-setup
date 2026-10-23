@@ -8,7 +8,7 @@ Resultado final:
 
 Todo es **reversible**. Si algo sale mal, ve a "Restaurar" al final.
 
-Archivos del repo: `README.md` (esta guía), `instalar.ps1` (hace el trabajo por ti), `remap.apk` (el launcher y el servicio de botones), `app/` (código fuente de la APK).
+Archivos del repo: `README.md` (esta guía), `instalar.ps1` (hace el trabajo por ti), `remap.apk` (el launcher y el servicio de botones), `app/` (código fuente de la APK), `compilar.ps1` (vuelve a generar `remap.apk` desde `app/`).
 
 > **Aviso:** hazlo bajo tu propia responsabilidad. Es para el onn. 4K Streaming Box; en otros equipos no está probado. Lo único que se instala de terceros es `remap.apk`, firmada con una llave de depuración.
 
@@ -134,4 +134,5 @@ Si algo queda muy mal: Ajustes → Sistema → Restablecer (borra apps y cuentas
 - TizenTube abre videos con `https://www.youtube.com/tv?v=ID` sobre el paquete `io.gh.reisxd.tizentube.cobalt`.
 - Recomendaciones: RSS de los canales de los videos que ya viste (sin claves de API). Si no hay historial, usa unos canales genéricos.
 - Para que las recomendaciones salgan de todas tus suscripciones: exporta `suscripciones.csv` desde Google Takeout (pendiente de implementar).
-- Compilar la APK desde el código: aapt2 → javac (--release 8) → d8 → zipalign → apksigner (SDK platform 37, build-tools 36). El código fuente está en `tvbox-remap/app`.
+- Compilar la APK desde el código: `powershell -ExecutionPolicy Bypass -File compilar.ps1`. Hace aapt2 → javac (--release 8) → d8 → zipalign → apksigner y deja `remap.apk` en la carpeta. Necesita un JDK 17+ y el SDK de Android (`platforms;android-37.0` y `build-tools;36.0.0`, en `%LOCALAPPDATA%\Android\Sdk`). El código fuente está en `app/`.
+- Firma: la primera vez `compilar.ps1` crea `remap.keystore` (git no la guarda). **Guárdala**: con otra llave la APK no se instala encima y hay que desinstalar la anterior, cosa que `instalar.ps1` hace sola aunque se pierde el historial de "Seguir mirando".
