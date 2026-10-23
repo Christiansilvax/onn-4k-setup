@@ -12,6 +12,10 @@ Archivos del repo: `README.md` (esta guía), `instalar.ps1` (hace el trabajo por
 
 > **Aviso:** hazlo bajo tu propia responsabilidad. Es para el onn. 4K Streaming Box; en otros equipos no está probado. Lo único que se instala de terceros es `remap.apk`, firmada con una llave de depuración.
 
+> **Fuera de EE. UU.:** el onn. solo se deja configurar desde EE. UU., Canadá o Puerto Rico (revisa la IP en la configuración inicial). Si estás en otro país, **no le hagas restablecimiento de fábrica**: después pide una conexión de EE. UU. (VPN) para volver a configurarla.
+>
+> **No quites más paquetes del sistema** que los de este script. Quitar otros (por ejemplo `com.android.se` o `com.android.managedprovisioning`) dejó la caja reiniciándose con "data corrupt" y solo se arregló con restablecimiento de fábrica.
+
 ---
 
 ## 0. Qué necesitas
@@ -59,6 +63,8 @@ El script hace, en orden:
 4. Ajustes: sonido en PCM, animaciones a 0.5x, menos escaneo Wi-Fi/Bluetooth, anuncios limitados.
 5. Deja mi launcher como predeterminado.
 
+Además: no quita apps que guardaron una red Wi-Fi, y si quita el protector de pantalla de Google pone el básico de Android.
+
 Después **reinicia el TV box**.
 
 ## 5. Configurar los botones (en la TV)
@@ -87,6 +93,9 @@ El orden de las primeras apps está en el código (`Prefs.FIRST` en la APK). Si 
 | Fila "Seguir mirando" vacía al inicio | Solo guarda lo que ves después de instalar | Es normal. Se llena viendo videos. |
 | Una app IPTV "desapareció" sola | Cambió de paquete o la quitó el usuario | Después de limpiar, revisa con `adb shell pm list packages` que tus apps sigan ahí. |
 | Descargas pesadas por mi cuenta (SDK, JDK) | El usuario prefería bajarlas él | Cada quien baja sus descargas; el script usa solo lo que está en la carpeta. |
+| Quitar paquetes del sistema fuera de la lista (`com.android.se`, `managedprovisioning`, `sdksandbox`...) y reiniciar | Bucle de reinicio con "data corrupt"; el menú de reset no respondía | **Solo la lista del script.** Si pasa: mantener el botón de la caja mientras se conecta la corriente → Factory reset. |
+| Restablecer la caja en Colombia | La configuración dijo "región no compatible" | Configurarla con un PC con VPN de EE. UU. compartiendo internet (punto de acceso de Windows + compartir el adaptador de la VPN). Ya configurada, funciona con cualquier red. |
+| Quitar una app que guardó la red Wi-Fi | Android borra esa red | El script ya no quita apps que tengan una red Wi-Fi guardada. |
 | Abrir pantallas por ADB mientras se prueba | Se abrieron apps por error (Magma, TizenTube) | Prueba con el control en la mano, no con teclas simuladas. |
 
 ## Qué NO tocar

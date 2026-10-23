@@ -14,6 +14,7 @@ $apk = Join-Path $PSScriptRoot "remap.apk"
 # --- localizar adb ---
 $adb = (Get-Command adb -ErrorAction SilentlyContinue).Source
 if (-not $adb) { $adb = Join-Path $PSScriptRoot "platform-tools\adb.exe" }
+if (-not (Test-Path $adb)) { $adb = Join-Path $PSScriptRoot "..\platform-tools\adb.exe" }
 if (-not (Test-Path $adb)) { $adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" }
 if (-not (Test-Path $adb)) { Write-Host "No encuentro adb. Descarga platform-tools de Google y descomprimelo junto a este script (carpeta platform-tools)."; exit 1 }
 function A { & $adb -s "${Ip}:5555" @args }
@@ -41,6 +42,7 @@ if ($Restaurar) {
     A shell settings delete secure limit_ad_tracking | Out-Null
     A shell settings put global encoded_surround_output 0 | Out-Null
     A shell settings put global wifi_scan_always_enabled 1 | Out-Null
+    A shell settings delete secure screensaver_components | Out-Null
     A uninstall com.remap.buttons | Out-Host
     Write-Host "Restaurado. Reinicia el TV box."
     exit 0
@@ -50,8 +52,15 @@ if ($Restaurar) {
 $quitar = $rastreo
 if ($SinYoutube) { $quitar += $youtube }
 if ($SinNetflix) { $quitar += $netflix }
+# Una app que guardo una red Wi-Fi no se quita: Android borraria esa red (idea de free-my-tv).
+$wifi = (A shell "dumpsys wifi | grep -o -E 'cname=[^ ]*'") -replace 'cname=', ''
 foreach ($p in $quitar) {
+    if ($wifi -contains $p) { "se queda $p (guardo una red Wi-Fi)"; continue }
     if ((A shell pm list packages $p) -match [regex]::Escape($p)) { "quitando $p -> " + (A shell pm uninstall -k --user 0 $p) }
+}
+# Sin dreamx no queda protector de pantalla: usa el basico de Android para no marcar la TV.
+if ((A shell settings get secure screensaver_components) -match "dreamx") {
+    A shell settings put secure screensaver_components com.android.dreams.basic/.Colors | Out-Null
 }
 
 # --- 2. instalar la APK ---
