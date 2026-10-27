@@ -2,3 +2,4 @@
 *.idsig
 build/
 tmdb.key
+update.url

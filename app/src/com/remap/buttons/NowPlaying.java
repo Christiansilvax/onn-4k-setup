@@ -550,24 +550,16 @@ final class NowPlaying extends LinearLayout {
         b.setScaleType(ImageView.ScaleType.CENTER);
         b.setFocusable(true);
         b.setClickable(true);
-        StateListDrawable s = new StateListDrawable();
-        s.addState(new int[]{android.R.attr.state_focused}, oval(theme.focus, theme.focusStroke));
-        s.addState(new int[]{}, oval(theme.chip, 0));
-        b.setBackground(s);
+        b.setBackground(Glass.chip(act, theme, 24, true));
         b.setOnClickListener(l);
-        b.setOnFocusChangeListener((v, has) -> v.animate().scaleX(has ? 1.12f : 1f).scaleY(has ? 1.12f : 1f).setDuration(120).start());
+        b.setOnFocusChangeListener((v, has) -> {
+            if (theme.light) Glass.lift(v, theme, has, 1.12f);
+            else v.animate().scaleX(has ? 1.12f : 1f).scaleY(has ? 1.12f : 1f).setDuration(120).start();
+        });
         LayoutParams lp = new LayoutParams(dp(48), dp(48));
         lp.leftMargin = dp(10);
         b.setLayoutParams(lp);
         return b;
-    }
-
-    private GradientDrawable oval(int color, int stroke) {
-        GradientDrawable g = new GradientDrawable();
-        g.setShape(GradientDrawable.OVAL);
-        g.setColor(color);
-        if (stroke != 0) g.setStroke(dp(2), stroke);
-        return g;
     }
 
     private GradientDrawable pill(int color) {
@@ -577,20 +569,7 @@ final class NowPlaying extends LinearLayout {
         return g;
     }
 
-    private StateListDrawable glass(int radius) {
-        StateListDrawable s = new StateListDrawable();
-        GradientDrawable on = new GradientDrawable();
-        on.setColor(theme.focus);
-        on.setCornerRadius(dp(radius));
-        on.setStroke(dp(3), theme.focusStroke);
-        GradientDrawable off = new GradientDrawable();
-        off.setColor(theme.glass);
-        off.setCornerRadius(dp(radius));
-        off.setStroke(dp(1), theme.glassStroke);
-        s.addState(new int[]{android.R.attr.state_focused}, on);
-        s.addState(new int[]{}, off);
-        return s;
-    }
+    private StateListDrawable glass(int radius) { return Glass.panel(act, theme, radius); }
 
     private int dp(int v) { return (int) (v * getResources().getDisplayMetrics().density); }
 }

@@ -98,6 +98,7 @@ if ($r -match "UPDATE_INCOMPATIBLE") {   # firmada con otra llave (p. ej. remap.
 A shell appops set --uid com.remap.buttons MANAGE_EXTERNAL_STORAGE allow | Out-Null   # antes del servicio: al conectarse recupera el respaldo de botones en Documents/RemapBotones
 A shell pm grant com.remap.buttons android.permission.ACCESS_COARSE_LOCATION | Out-Null   # clima con la ubicacion real de la caja
 A shell pm grant com.remap.buttons android.permission.ACCESS_FINE_LOCATION | Out-Null     # nombre del Wi-Fi en la ficha de red del inicio
+A shell appops set com.remap.buttons REQUEST_INSTALL_PACKAGES allow | Out-Null           # se actualiza sola desde el servidor (update.url)
 # configuracion del repo (botones, orden, ajustes): solo si la caja no tiene la suya, para no pisarla
 if ((Test-Path $cfg) -and -not ((A shell "ls $respaldo 2>/dev/null") -match "botones.json")) {
     A shell mkdir -p /sdcard/Documents/RemapBotones | Out-Null

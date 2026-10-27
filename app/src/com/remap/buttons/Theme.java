@@ -2,9 +2,14 @@ package com.remap.buttons;
 
 import android.content.Context;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
 import android.widget.TextView;
 
-/** Colores del inicio: claro de día (amanecer y día) y oscuro al atardecer y de noche. */
+/**
+ * Colores del inicio: claro de día (amanecer y día) y oscuro al atardecer y de noche.
+ * El claro es "cristal líquido" al estilo iOS: fondo Aurora, paneles esmerilados y foco por elevación.
+ */
 final class Theme {
     final boolean light;
     /** texto principal, texto secundario y acento (etiquetas en mayúsculas) */
@@ -15,9 +20,11 @@ final class Theme {
     final int chip;
     /** velo sobre el fondo (arriba, medio, abajo) y color base de los velos del banner */
     final int scrimTop, scrimMid, scrimBottom, veil;
+    /** cristal claro: parte de abajo del degradado, brillo del canto superior y color de la sombra al enfocar */
+    final int glassEnd, rim, shadow;
 
     private Theme(boolean light, int text, int textSoft, int accent, int glass, int glassStroke, int focus, int focusStroke,
-                  int chip, int scrimTop, int scrimMid, int scrimBottom, int veil) {
+                  int chip, int scrimTop, int scrimMid, int scrimBottom, int veil, int glassEnd, int rim, int shadow) {
         this.light = light;
         this.text = text;
         this.textSoft = textSoft;
@@ -31,16 +38,22 @@ final class Theme {
         this.scrimMid = scrimMid;
         this.scrimBottom = scrimBottom;
         this.veil = veil;
+        this.glassEnd = glassEnd;
+        this.rim = rim;
+        this.shadow = shadow;
     }
 
     // velos del 75-90 %: la miniatura de fondo queda como un tinte y el texto siempre sobre un fondo parejo
     static final Theme DARK = new Theme(false, 0xFFFFFFFF, 0xFFFFFFFF, 0xFF8AB4FF,
             0x26FFFFFF, 0x33FFFFFF, 0x44FFFFFF, 0xFFFFFFFF,
-            0x33FFFFFF, 0xBF060A1E, 0xD9060A1E, 0xE6060A1E, 0xFF0B1230);
+            0x33FFFFFF, 0xBF060A1E, 0xD9060A1E, 0xE6060A1E, 0xFF0B1230,
+            0x26FFFFFF, 0x33FFFFFF, 0xFF000000);
 
-    static final Theme LIGHT = new Theme(true, 0xFF000000, 0xFF000000, 0xFF1D3FA8,
-            0x99FFFFFF, 0x1F000000, 0xFFFFFFFF, 0xFF000000,
-            0x1A000000, 0xBFF2F7FF, 0xD9F2F7FF, 0xE6F2F7FF, 0xFFF2F7FF);
+    // tinta casi negra, azul iOS y cristal blanco del 72 al 48 %; el velo solo aparece con la miniatura de fondo
+    static final Theme LIGHT = new Theme(true, 0xFF1C1C1E, 0xFF55555F, 0xFF007AFF,
+            0xB8FFFFFF, 0x99FFFFFF, 0xF7FFFFFF, 0xFFFFFFFF,
+            0x1A1C1C1E, 0x40F4F7FC, 0x66F4F7FC, 0x8CF4F7FC, 0xFFF7F9FC,
+            0x7AFFFFFF, 0xCCFFFFFF, 0xFF2F6FE0);
 
     static Theme forPhase(int phase) {
         return phase == Weather.DAWN || phase == Weather.DAYTIME ? LIGHT : DARK;
@@ -61,14 +74,25 @@ final class Theme {
         return Weather.colors(phase);
     }
 
+    /** Fondo de pantalla: Aurora animable de día, degradado de siempre al atardecer y de noche. */
+    static Drawable backdrop(Context c, int phase) {
+        Theme t = current(c, phase);
+        if (t.light) return new Aurora(t == forPhase(phase) && phase == Weather.DAWN);
+        return new GradientDrawable(GradientDrawable.Orientation.TL_BR, background(c, phase));
+    }
+
     /**
-     * Texto legible sobre cualquier fondo: negrilla y un halo (brillo blanco de día, sombra oscura de noche).
+     * Texto legible sobre cualquier fondo: semibold de día y negrilla con sombra oscura de noche.
      * Se llama después de fijar el color.
      */
     void style(TextView t) {
-        t.setTypeface(Typeface.DEFAULT_BOLD);
-        if (light) t.setShadowLayer(8f, 0f, 0f, 0xE6FFFFFF);
-        else t.setShadowLayer(10f, 0f, 2f, 0xCC000000);
+        if (light) { // semibold limpio, sin halo: el contraste lo dan la tinta y el cristal
+            t.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+            t.setShadowLayer(0f, 0f, 0f, 0);
+        } else {
+            t.setTypeface(Typeface.DEFAULT_BOLD);
+            t.setShadowLayer(10f, 0f, 2f, 0xCC000000);
+        }
     }
 
     /** El mismo color con otra opacidad (0-255). */

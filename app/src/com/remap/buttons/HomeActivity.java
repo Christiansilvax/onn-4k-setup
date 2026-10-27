@@ -46,11 +46,14 @@ public class HomeActivity extends Activity {
     private final java.util.Map<String, LinearLayout> sections = new java.util.HashMap<>();
     private AppActions actions;
     private ImageView backdrop;
+    private View scrim;
     private Bitmap shownBackdrop;
     private TextView clock, weatherView, recentTitle, recoTitle;
     private Prefs prefs;
     private FrameLayout frame;
-    private GradientDrawable bg;
+    private android.graphics.drawable.Drawable bg;
+    private Aurora aurora;
+    private boolean resumed;
     private int phase = -1;
     private Weather weather;
     private long weatherAt;
@@ -80,9 +83,10 @@ public class HomeActivity extends Activity {
         if (android.os.Build.VERSION.SDK_INT >= 31)
             backdrop.setRenderEffect(android.graphics.RenderEffect.createBlurEffect(60f, 60f, android.graphics.Shader.TileMode.CLAMP));
         frame.addView(backdrop, new FrameLayout.LayoutParams(-1, -1));
-        View scrim = new View(this);
+        scrim = new View(this);
         scrim.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
                 new int[]{theme.scrimTop, theme.scrimMid, theme.scrimBottom}));
+        if (theme.light) scrim.setAlpha(0f); // de día el velo llega con la miniatura: sin ella se ve la Aurora limpia
         frame.addView(scrim, new FrameLayout.LayoutParams(-1, -1));
         ScrollView sv = new ScrollView(this);
         sv.setFillViewport(true);
@@ -152,6 +156,8 @@ public class HomeActivity extends Activity {
         if (settings.showBar()) nowPlaying.start();
         hero.start();
         if (wifi != null) wifi.start();
+        resumed = true;
+        if (aurora != null) aurora.start();
         tick();
     }
 
@@ -167,6 +173,8 @@ public class HomeActivity extends Activity {
         hero.stop();
         if (wifi != null) wifi.stop();
         if (actions != null) actions.stop();
+        resumed = false;
+        if (aurora != null) aurora.stop();
     }
 
     private void tick() {
@@ -188,7 +196,10 @@ public class HomeActivity extends Activity {
                 if (got == null) return;
                 weather = got;
                 weatherAt = System.currentTimeMillis();
-                weatherView.setText(got.icon() + "  " + got.temp + "°   " + got.description() + (got.city.isEmpty() ? "" : "  ·  " + got.city));
+                android.graphics.drawable.Drawable ic = getDrawable(got.icon());
+                ic.setBounds(0, 0, dp(34), dp(34));
+                weatherView.setCompoundDrawablesRelative(ic, null, null, null);
+                weatherView.setText(got.temp + "°   " + got.description() + (got.city.isEmpty() ? "" : "  ·  " + got.city));
                 applyPhase();
             });
         }).start();
@@ -203,7 +214,10 @@ public class HomeActivity extends Activity {
             recreate();
             return;
         }
-        GradientDrawable next = new GradientDrawable(GradientDrawable.Orientation.TL_BR, Theme.background(this, p));
+        android.graphics.drawable.Drawable next = Theme.backdrop(this, p);
+        if (aurora != null) aurora.stop();
+        aurora = next instanceof Aurora ? (Aurora) next : null;
+        if (aurora != null && resumed) aurora.start();
         if (bg == null) frame.setBackground(next);
         else {
             android.graphics.drawable.TransitionDrawable td =
@@ -231,14 +245,19 @@ public class HomeActivity extends Activity {
             items.add(new String[]{h.get(i)[0], h.get(i)[1], label});
         }
         for (int i = 0; i < recos.size() && items.size() < 7; i++) items.add(new String[]{recos.get(i)[0], recos.get(i)[1], "Recomendado para ti"});
-        // el primero de cada fila del catálogo, con su imagen grande
-        for (int r = 0; r < catRows.size() && r < 3; r++) {
-            List<String[]> l = Catalog.itemsOf(catRows.get(r));
-            if (l.isEmpty()) continue;
-            String[] it = l.get(0);
-            String row = (String) catRows.get(r)[0];
-            items.add(Math.min(items.size(), 1 + 2 * r), new String[]{it[0], it[1],
-                    row.startsWith("Porque") ? row : "En " + Catalog.label(this, it[3]), it[2]});
+        // lo que viste en Xuper (se reabre desde su historial, en el punto exacto), con su imagen grande.
+        // Lo popular no: Xuper le pone otros nombres y la búsqueda no lo encuentra.
+        int slot = 0;
+        List<String[]> seen = settings.learnApps() ? Catalog.seen(this) : new ArrayList<>();
+        for (int k = 0; k < seen.size() && slot < 4; k++) {
+            String[] it = seen.get(k);
+            if (it[2].isEmpty() || !Catalog.isScreenApp(this, it[3])) continue;
+            String label = "Seguir viendo";
+            String ep = Catalog.episode(this, it[0]);
+            if (ep != null) label += "  ·  " + ep;
+            long[] p = Catalog.progress(this, it[0]);
+            if (p != null && p[1] > p[0]) label += "  ·  quedan " + Math.max(1, (p[1] - p[0]) / 60000) + " min";
+            items.add(Math.min(items.size(), 1 + 2 * slot++), new String[]{it[0], it[1], label, it[2]});
         }
         // una app cada dos videos
         List<String[]> apps = new ArrayList<>();
@@ -261,27 +280,13 @@ public class HomeActivity extends Activity {
 
     private int dp(int v) { return (int) (v * getResources().getDisplayMetrics().density); }
 
-    private GradientDrawable box(int color, int radius, int stroke, int strokeColor) {
-        GradientDrawable g = new GradientDrawable();
-        g.setColor(color);
-        g.setCornerRadius(dp(radius));
-        if (stroke > 0) g.setStroke(dp(stroke), strokeColor);
-        return g;
-    }
-
-    /** Cristal: translucido con borde fino; al enfocar se aclara y el borde brilla. */
-    private StateListDrawable focusBg(int radius) {
-        StateListDrawable s = new StateListDrawable();
-        s.addState(new int[]{android.R.attr.state_focused}, box(theme.focus, radius, 3, theme.focusStroke));
-        s.addState(new int[]{}, box(theme.glass, radius, 1, theme.glassStroke));
-        return s;
-    }
+    /** Cristal: translucido con borde fino; al enfocar se aclara y el borde brilla (ver Glass). */
+    private StateListDrawable focusBg(int radius) { return Glass.panel(this, theme, radius); }
 
     /** Agranda suavemente el elemento enfocado y, si hay miniatura, la pone de fondo. */
     private void glass(final View v, final ImageView thumb) {
         v.setOnFocusChangeListener((view, has) -> {
-            view.animate().scaleX(has ? 1.05f : 1f).scaleY(has ? 1.05f : 1f).setDuration(150).start();
-            view.setElevation(has ? 24f : 0f);
+            Glass.lift(view, theme, has, theme.light ? 1.06f : 1.05f);
             if (has && settings.showBackdrop() && thumb != null && thumb.getDrawable() instanceof android.graphics.drawable.BitmapDrawable) {
                 Bitmap bm = ((android.graphics.drawable.BitmapDrawable) thumb.getDrawable()).getBitmap();
                 if (bm != shownBackdrop) {
@@ -289,6 +294,7 @@ public class HomeActivity extends Activity {
                     backdrop.animate().alpha(0f).setDuration(120).withEndAction(() -> {
                         backdrop.setImageBitmap(bm);
                         backdrop.animate().alpha(0.45f).setDuration(350).start(); // tenue: no compite con el texto
+                        if (theme.light) scrim.animate().alpha(1f).setDuration(350).start();
                     }).start();
                 }
             }
@@ -304,6 +310,8 @@ public class HomeActivity extends Activity {
         weatherView.setTextColor(theme.textSoft);
         theme.style(weatherView);
         weatherView.setTextSize(17);
+        weatherView.setGravity(Gravity.CENTER_VERTICAL);
+        weatherView.setCompoundDrawablePadding(dp(10));
         weatherView.setPadding(0, 0, dp(28), 0);
         if (!settings.showWeather()) weatherView.setVisibility(View.GONE);
         top.addView(weatherView);
@@ -324,17 +332,7 @@ public class HomeActivity extends Activity {
         gear.setColorFilter(theme.text);
         gear.setScaleType(ImageView.ScaleType.CENTER);
         gear.setFocusable(true);
-        StateListDrawable gs = new StateListDrawable();
-        GradientDrawable gOn = new GradientDrawable();
-        gOn.setShape(GradientDrawable.OVAL);
-        gOn.setColor(theme.focus);
-        gOn.setStroke(dp(2), theme.focusStroke);
-        GradientDrawable gOff = new GradientDrawable();
-        gOff.setShape(GradientDrawable.OVAL);
-        gOff.setColor(theme.chip);
-        gs.addState(new int[]{android.R.attr.state_focused}, gOn);
-        gs.addState(new int[]{}, gOff);
-        gear.setBackground(gs);
+        gear.setBackground(Glass.chip(this, theme, 22, true));
         gear.setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));
         LinearLayout.LayoutParams glp = new LinearLayout.LayoutParams(dp(44), dp(44));
         glp.leftMargin = dp(20);
@@ -350,6 +348,7 @@ public class HomeActivity extends Activity {
         t.setTextColor(theme.text);
         theme.style(t);
         t.setTextSize(22);
+        if (theme.light) t.setLetterSpacing(-0.01f);
         t.setPadding(dp(4), dp(14), 0, dp(4));
         parent.addView(t);
         return t;
@@ -400,11 +399,15 @@ public class HomeActivity extends Activity {
             });
             iv.setClipToOutline(true);
             iv.setElevation(dp(6));
+            if (theme.light && android.os.Build.VERSION.SDK_INT >= 28) { // sombra azulada, como el resto del cristal
+                iv.setOutlineSpotShadowColor(theme.shadow);
+                iv.setOutlineAmbientShadowColor(theme.shadow);
+            }
             iv.setDuplicateParentStateEnabled(true);
             GradientDrawable ringOn = new GradientDrawable();
             ringOn.setShape(GradientDrawable.OVAL);
             ringOn.setColor(0);
-            ringOn.setStroke(dp(4), theme.focusStroke);
+            ringOn.setStroke(dp(theme.light ? 5 : 4), theme.focusStroke);
             StateListDrawable ring = new StateListDrawable();
             ring.addState(new int[]{android.R.attr.state_focused}, ringOn);
             ring.addState(new int[]{}, new android.graphics.drawable.ColorDrawable(0));

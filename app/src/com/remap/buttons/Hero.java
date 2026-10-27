@@ -99,11 +99,12 @@ final class Hero extends FrameLayout {
         // velo de izquierda a derecha y de abajo hacia arriba para que el texto se lea sobre cualquier imagen
         View side = new View(c);
         side.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{Theme.alpha(theme.veil, 0xF2), Theme.alpha(theme.veil, 0xA6), Theme.alpha(theme.veil, 0)}));
+                theme.light ? new int[]{Theme.alpha(theme.veil, 0xF2), Theme.alpha(theme.veil, 0x99), Theme.alpha(theme.veil, 0)}
+                        : new int[]{Theme.alpha(theme.veil, 0xF2), Theme.alpha(theme.veil, 0xA6), Theme.alpha(theme.veil, 0)}));
         addView(side, new LayoutParams(-1, -1));
         View bottom = new View(c);
         bottom.setBackground(new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
-                new int[]{Theme.alpha(theme.veil, 0xCC), Theme.alpha(theme.veil, 0)}));
+                new int[]{Theme.alpha(theme.veil, theme.light ? 0xB3 : 0xCC), Theme.alpha(theme.veil, 0)}));
         addView(bottom, new LayoutParams(-1, dp(120), Gravity.BOTTOM));
         addView(appArt, alp);
 
@@ -139,7 +140,7 @@ final class Hero extends FrameLayout {
                 new int[][]{{android.R.attr.state_focused}, {}}, new int[]{theme.veil, theme.text}));
         StateListDrawable pb = new StateListDrawable();
         pb.addState(new int[]{android.R.attr.state_focused}, round(theme.text, 999, 0)); // botón invertido al enfocar
-        pb.addState(new int[]{}, round(theme.chip, 999, 0));
+        pb.addState(new int[]{}, round(theme.light ? theme.glass : theme.chip, 999, 0)); // de día, píldora de cristal
         play.setBackground(pb);
         actions.addView(play);
         dots = new LinearLayout(c);

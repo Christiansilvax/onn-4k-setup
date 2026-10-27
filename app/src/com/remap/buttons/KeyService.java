@@ -38,10 +38,19 @@ public class KeyService extends AccessibilityService {
             titles = new ScreenTitles(this, main);
             titles.start();
         }
+        if (Updater.enabled()) main.postDelayed(update, 60000); // al minuto de encender y luego cada hora
     }
+
+    private final Runnable update = new Runnable() {
+        @Override public void run() {
+            Updater.check(KeyService.this);
+            main.postDelayed(this, Updater.EVERY_MS);
+        }
+    };
 
     @Override public void onDestroy() {
         running = null;
+        main.removeCallbacks(update);
         if (titles != null) titles.stop();
         super.onDestroy();
     }

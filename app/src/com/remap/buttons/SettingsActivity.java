@@ -8,8 +8,6 @@ import android.content.pm.PackageManager;
 import android.graphics.Outline;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
-import android.graphics.drawable.GradientDrawable;
-import android.graphics.drawable.StateListDrawable;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.text.TextUtils;
@@ -74,7 +72,7 @@ public class SettingsActivity extends Activity {
         sv.setClipChildren(false);
         sv.addView(col);
         FrameLayout frame = new FrameLayout(this);
-        frame.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR, Theme.background(this, phase)));
+        frame.setBackground(Theme.backdrop(this, phase));
         frame.addView(sv, new FrameLayout.LayoutParams(-1, -1));
         setContentView(frame);
     }
@@ -350,20 +348,7 @@ public class SettingsActivity extends Activity {
         return t;
     }
 
-    private Drawable focusBg() {
-        StateListDrawable s = new StateListDrawable();
-        s.addState(new int[]{android.R.attr.state_focused}, box(theme.focus, 3, theme.focusStroke));
-        s.addState(new int[]{}, box(theme.glass, 1, theme.glassStroke));
-        return s;
-    }
-
-    private GradientDrawable box(int color, int stroke, int strokeColor) {
-        GradientDrawable g = new GradientDrawable();
-        g.setColor(color);
-        g.setCornerRadius(dp(16));
-        g.setStroke(dp(stroke), strokeColor);
-        return g;
-    }
+    private Drawable focusBg() { return Glass.panel(this, theme, 16); }
 
     private int dp(int v) { return Math.round(v * getResources().getDisplayMetrics().density); }
 }

@@ -5,8 +5,6 @@ import android.content.Intent;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RectF;
-import android.graphics.drawable.GradientDrawable;
-import android.graphics.drawable.StateListDrawable;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -41,10 +39,7 @@ final class WifiChip extends LinearLayout {
         setGravity(Gravity.CENTER_VERTICAL);
         setFocusable(true);
         setPadding(dp(14), 0, dp(16), 0);
-        StateListDrawable s = new StateListDrawable();
-        s.addState(new int[]{android.R.attr.state_focused}, pill(theme.focus, 2, theme.focusStroke));
-        s.addState(new int[]{}, pill(theme.chip, 0, 0));
-        setBackground(s);
+        setBackground(Glass.chip(c, theme, 22, false));
         bars = new Bars(c);
         addView(bars, new LayoutParams(dp(22), dp(18)));
         name = new TextView(c);
@@ -96,14 +91,6 @@ final class WifiChip extends LinearLayout {
             name.setText(wm.isWifiEnabled() ? "Sin red" : "Wi-Fi apagado");
         }
         setAlpha(nc != null && nc.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) ? 1f : 0.7f);
-    }
-
-    private GradientDrawable pill(int color, int stroke, int strokeColor) {
-        GradientDrawable g = new GradientDrawable();
-        g.setColor(color);
-        g.setCornerRadius(dp(22));
-        if (stroke > 0) g.setStroke(dp(stroke), strokeColor);
-        return g;
     }
 
     private int dp(int v) { return (int) (v * getResources().getDisplayMetrics().density); }

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ícono del clima a color (estilo multicolor de iOS): se lee sobre el fondo claro y el oscuro -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="32dp" android:height="32dp" android:viewportWidth="32" android:viewportHeight="32">
+    <group android:translateX="-6" android:translateY="-7" android:scaleX="0.55" android:scaleY="0.55" android:pivotX="16" android:pivotY="16">
+        <path android:fillColor="#FFFFB800" android:pathData="M9.5,16 a6.5,6.5 0 1,0 13,0 a6.5,6.5 0 1,0 -13,0" />
+        <path android:strokeColor="#FFFFA800" android:strokeWidth="2.4" android:strokeLineCap="round" android:pathData="M25,16 L28.5,16" />
+        <path android:strokeColor="#FFFFA800" android:strokeWidth="2.4" android:strokeLineCap="round" android:pathData="M7,16 L3.5,16" />
+        <path android:strokeColor="#FFFFA800" android:strokeWidth="2.4" android:strokeLineCap="round" android:pathData="M16,25 L16,28.5" />
+        <path android:strokeColor="#FFFFA800" android:strokeWidth="2.4" android:strokeLineCap="round" android:pathData="M16,7 L16,3.5" />
+        <path android:strokeColor="#FFFFA800" android:strokeWidth="2.4" android:strokeLineCap="round" android:pathData="M22.4,22.4 L24.8,24.8" />
+        <path android:strokeColor="#FFFFA800" android:strokeWidth="2.4" android:strokeLineCap="round" android:pathData="M9.6,22.4 L7.2,24.8" />
+        <path android:strokeColor="#FFFFA800" android:strokeWidth="2.4" android:strokeLineCap="round" android:pathData="M9.6,9.6 L7.2,7.2" />
+        <path android:strokeColor="#FFFFA800" android:strokeWidth="2.4" android:strokeLineCap="round" android:pathData="M22.4,9.6 L24.8,7.2" />
+    </group>
+    <group android:translateX="1" android:translateY="-5" android:scaleX="0.92" android:scaleY="0.92" android:pivotX="16" android:pivotY="19">
+        <path android:fillColor="#FFE6ECF5" android:strokeColor="#FF8797AE" android:strokeWidth="1.4" android:pathData="M9,25 L24,25 A5.5,5.5 0 0 0 24.6,14.03 A7.5,7.5 0 0 0 10.2,13.1 A6,6 0 0 0 9,25 Z" />
+    </group>
+    <path android:strokeColor="#FF2F8BFF" android:strokeWidth="2.2" android:strokeLineCap="round" android:pathData="M11,24 L9.5,28" />
+    <path android:strokeColor="#FF2F8BFF" android:strokeWidth="2.2" android:strokeLineCap="round" android:pathData="M16.5,24 L15,28" />
+    <path android:strokeColor="#FF2F8BFF" android:strokeWidth="2.2" android:strokeLineCap="round" android:pathData="M22,24 L20.5,28" />
+</vector>
