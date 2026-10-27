@@ -9,7 +9,8 @@ param(
     [switch]$SinYoutube,   # quita YouTube y YouTube Music del sistema (usa TizenTube en su lugar)
     [switch]$SinNetflix,   # quita Netflix del sistema
     [switch]$Restaurar,    # devuelve todo lo que este script quito
-    [switch]$GuardarConfig # copia la configuracion de la caja a config/botones.json (sin historial)
+    [switch]$GuardarConfig, # copia la configuracion de la caja a config/botones.json (sin historial)
+    [string]$ZonaHoraria = "America/Bogota" # la caja no tiene red movil: con zona automatica queda en Nueva York (una hora mas)
 )
 
 $ErrorActionPreference = "Continue"
@@ -112,12 +113,14 @@ A shell cmd notification allow_listener com.remap.buttons/com.remap.buttons.Medi
 # --- 4. ajustes del sistema ---
 A shell settings put global encoded_surround_output 1 | Out-Null     # PCM: evita TV sin sonido por HDMI
 A shell settings put secure match_content_frame_rate 2 | Out-Null  # la tele cambia a 24/30/60 Hz segun el video (evita saltos)
-A shell settings put global window_animation_scale 0.5 | Out-Null
-A shell settings put global transition_animation_scale 0.5 | Out-Null
-A shell settings put global animator_duration_scale 0.5 | Out-Null
+A shell settings put global window_animation_scale 0.25 | Out-Null
+A shell settings put global transition_animation_scale 0.25 | Out-Null
+A shell settings put global animator_duration_scale 0.25 | Out-Null
 A shell settings put global wifi_scan_always_enabled 0 | Out-Null
 A shell settings put global ble_scan_always_enabled 0 | Out-Null
 A shell settings put secure limit_ad_tracking 1 | Out-Null
+A shell settings put global auto_time_zone 0 | Out-Null
+A shell service call alarm 3 s16 $ZonaHoraria | Out-Null   # setTimeZone; la hora sigue sincronizada por internet
 
 # --- 5. launcher predeterminado (NO se desactiva el de Google TV) ---
 A shell cmd package set-home-activity com.remap.buttons/.HomeActivity | Out-Host

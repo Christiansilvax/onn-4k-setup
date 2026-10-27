@@ -52,7 +52,7 @@ public class HomeActivity extends Activity {
     private Prefs prefs;
     private FrameLayout frame;
     private android.graphics.drawable.Drawable bg;
-    private Aurora aurora;
+    private Animated aurora; // fondo que se mueve (Aurora o Stars), solo mientras el inicio está a la vista
     private boolean resumed;
     private int phase = -1;
     private Weather weather;
@@ -80,8 +80,7 @@ public class HomeActivity extends Activity {
         backdrop = new ImageView(this);
         backdrop.setScaleType(ImageView.ScaleType.CENTER_CROP);
         backdrop.setAlpha(0f);
-        if (android.os.Build.VERSION.SDK_INT >= 31)
-            backdrop.setRenderEffect(android.graphics.RenderEffect.createBlurEffect(60f, 60f, android.graphics.Shader.TileMode.CLAMP));
+        // sin RenderEffect: desenfocar la pantalla entera en la GPU de esta caja traba todo (ver soft())
         frame.addView(backdrop, new FrameLayout.LayoutParams(-1, -1));
         scrim = new View(this);
         scrim.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
@@ -94,6 +93,9 @@ public class HomeActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(40), dp(12), dp(40), dp(16));
         sv.addView(root);
+        // el contenido queda en una capa ya dibujada: cuando solo se mueve el fondo la GPU la pega tal cual, en vez
+        // de redibujar tarjetas, cristal y sombras en cada cuadro (en esta caja eso tomaba ~70 ms)
+        sv.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         frame.addView(sv, new FrameLayout.LayoutParams(-1, -1));
         setContentView(frame);
         buildTop();
@@ -128,7 +130,7 @@ public class HomeActivity extends Activity {
         nlp.setMargins(dp(10), dp(14), dp(10), 0);
         root.addView(nowPlaying, nlp);
         buildApps();
-        recentTitle = title(section("seguir"), "Seguir mirando");
+        recentTitle = title(section("seguir"), "Seguir mirando en YouTube");
         recentRow = row(section("seguir"));
         recoTitle = title(section("youtube"), "Recomendaciones para ti");
         recoRow = row(section("youtube"));
@@ -154,7 +156,6 @@ public class HomeActivity extends Activity {
         loadReco();
         loadCatalog();
         if (settings.showBar()) nowPlaying.start();
-        hero.start();
         if (wifi != null) wifi.start();
         resumed = true;
         if (aurora != null) aurora.start();
@@ -170,7 +171,6 @@ public class HomeActivity extends Activity {
         super.onPause();
         main.removeCallbacksAndMessages(null);
         nowPlaying.stop();
-        hero.stop();
         if (wifi != null) wifi.stop();
         if (actions != null) actions.stop();
         resumed = false;
@@ -216,7 +216,7 @@ public class HomeActivity extends Activity {
         }
         android.graphics.drawable.Drawable next = Theme.backdrop(this, p);
         if (aurora != null) aurora.stop();
-        aurora = next instanceof Aurora ? (Aurora) next : null;
+        aurora = next instanceof Animated ? (Animated) next : null;
         if (aurora != null && resumed) aurora.start();
         if (bg == null) frame.setBackground(next);
         else {
@@ -284,6 +284,12 @@ public class HomeActivity extends Activity {
     private StateListDrawable focusBg(int radius) { return Glass.panel(this, theme, radius); }
 
     /** Agranda suavemente el elemento enfocado y, si hay miniatura, la pone de fondo. */
+    /** Desenfoque barato: la miniatura reducida a 48 px y estirada a toda la pantalla con filtrado. */
+    private static Bitmap soft(Bitmap bm) {
+        Bitmap mid = Bitmap.createScaledBitmap(bm, 160, Math.max(1, 160 * bm.getHeight() / bm.getWidth()), true);
+        return Bitmap.createScaledBitmap(mid, 48, Math.max(1, 48 * bm.getHeight() / bm.getWidth()), true);
+    }
+
     private void glass(final View v, final ImageView thumb) {
         v.setOnFocusChangeListener((view, has) -> {
             Glass.lift(view, theme, has, theme.light ? 1.06f : 1.05f);
@@ -292,7 +298,7 @@ public class HomeActivity extends Activity {
                 if (bm != shownBackdrop) {
                     shownBackdrop = bm;
                     backdrop.animate().alpha(0f).setDuration(120).withEndAction(() -> {
-                        backdrop.setImageBitmap(bm);
+                        backdrop.setImageBitmap(soft(bm));
                         backdrop.animate().alpha(0.45f).setDuration(350).start(); // tenue: no compite con el texto
                         if (theme.light) scrim.animate().alpha(1f).setDuration(350).start();
                     }).start();
@@ -456,26 +462,54 @@ public class HomeActivity extends Activity {
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent e) {
+        // mientras usas el control el fondo se queda quieto: la GPU queda libre para el foco y el desplazamiento
+        if (aurora != null && e.getAction() == KeyEvent.ACTION_DOWN) {
+            aurora.stop();
+            main.removeCallbacks(resumeBackground);
+            main.postDelayed(resumeBackground, 3000);
+        }
         return (actions != null && actions.handleKey(e)) || super.dispatchKeyEvent(e);
     }
 
+    private final Runnable resumeBackground = () -> { if (resumed && aurora != null) aurora.start(); };
+
+    /**
+     * "Seguir mirando": una fila para YouTube y otra por cada app (Xuper, Netflix…), así los videos de YouTube no
+     * empujan fuera lo que ibas viendo en las otras. Cada fila va de lo más reciente a lo más viejo.
+     */
     private void refreshRecent() {
+        List<String[]> h = Videos.history(this);
+        recentTitle.setVisibility(h.isEmpty() ? View.GONE : View.VISIBLE);
+        ((View) recentRow.getParent()).setVisibility(h.isEmpty() ? View.GONE : View.VISIBLE);
         int focused = recentRow.indexOfChild(recentRow.getFocusedChild()); // para no perder el cursor al redibujar
         recentRow.removeAllViews();
-        List<String[]> h = Videos.history(this);
-        List<String[]> apps = settings.learnApps() ? Catalog.seen(this) : new ArrayList<>();
-        boolean empty = h.isEmpty() && apps.isEmpty();
-        recentTitle.setVisibility(empty ? View.GONE : View.VISIBLE);
-        ((View) recentRow.getParent()).setVisibility(empty ? View.GONE : View.VISIBLE);
-        // YouTube y las demás apps juntos, de lo más reciente a lo más viejo (cada lista ya viene así ordenada)
-        int a = 0, y = 0;
-        while (a < apps.size() || y < h.size()) {
-            long ta = a < apps.size() && apps.get(a).length > 4 ? Long.parseLong(apps.get(a)[4]) : (a < apps.size() ? 0 : -1);
-            long ty = y < h.size() ? Videos.seenAt(this, h.get(y)[0]) : -1;
-            if (a < apps.size() && (y >= h.size() || ta >= ty)) recentRow.addView(catalogCard(apps.get(a++), true), cardLp());
-            else recentRow.addView(videoCard(h.get(y)[0], h.get(y++)[1], true), cardLp());
-        }
+        for (String[] v : h) recentRow.addView(videoCard(v[0], v[1], true), cardLp());
         if (focused >= 0 && recentRow.getChildCount() > 0) recentRow.getChildAt(Math.min(focused, recentRow.getChildCount() - 1)).requestFocus();
+
+        java.util.Map<String, List<String[]>> byApp = new java.util.LinkedHashMap<>();
+        if (settings.learnApps()) for (String[] it : Catalog.seen(this)) byApp.computeIfAbsent(it[3], k -> new ArrayList<>()).add(it);
+        boolean changed = false;
+        for (String id : new ArrayList<>(sections.keySet())) { // apps de las que ya no queda nada
+            if (id.startsWith("seguir:") && !byApp.containsKey(id.substring(7))) {
+                root.removeView(sections.remove(id));
+                changed = true;
+            }
+        }
+        for (java.util.Map.Entry<String, List<String[]>> e : byApp.entrySet()) {
+            String id = "seguir:" + e.getKey();
+            LinearLayout l;
+            if (!sections.containsKey(id)) {
+                LinearLayout box = section(id);
+                title(box, "Seguir mirando en " + Catalog.label(this, e.getKey()));
+                l = row(box);
+                changed = true;
+            } else l = (LinearLayout) ((ViewGroup) sections.get(id).getChildAt(1)).getChildAt(0);
+            int f = l.indexOfChild(l.getFocusedChild());
+            l.removeAllViews();
+            for (String[] it : e.getValue()) l.addView(catalogCard(it, true), cardLp());
+            if (f >= 0 && l.getChildCount() > 0) l.getChildAt(Math.min(f, l.getChildCount() - 1)).requestFocus();
+        }
+        if (changed) applyOrder();
         updateHero();
     }
 
@@ -588,18 +622,27 @@ public class HomeActivity extends Activity {
         try { startActivity(i); } catch (Exception ignored) { }
     }
 
-    private void fetchThumb(final String url, final ImageView iv) {
-        new Thread(() -> {
-            try {
-                HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
-                c.setConnectTimeout(8000);
-                c.setReadTimeout(8000);
-                InputStream in = c.getInputStream();
-                final Bitmap bm = BitmapFactory.decodeStream(in);
-                in.close();
-                main.post(() -> iv.setImageBitmap(bm));
-            } catch (Exception ignored) { }
-        }).start();
+    /** Miniaturas ya bajadas: las filas se redibujan cada vez que vuelves al inicio y no se bajan de nuevo. */
+    private static final android.util.LruCache<String, Bitmap> THUMBS = new android.util.LruCache<String, Bitmap>(24 * 1024 * 1024) {
+        @Override protected int sizeOf(String k, Bitmap b) { return b.getByteCount(); }
+    };
+    /** Pocas descargas a la vez: con un hilo por tarjeta la caja se atasca al abrir el inicio. */
+    private static final java.util.concurrent.ExecutorService LOADER = java.util.concurrent.Executors.newFixedThreadPool(3);
+
+    private void fetchThumb(String image, final ImageView iv) {
+        // la tarjeta mide unos 440 px: basta la imagen de 500 de TMDB (la de 780 es para el banner)
+        final String url = image.replace("/t/p/w780/", "/t/p/w500/");
+        Bitmap hit = THUMBS.get(url);
+        if (hit != null) {
+            iv.setImageBitmap(hit);
+            return;
+        }
+        LOADER.execute(() -> {
+            final Bitmap bm = Hero.download(url);
+            if (bm == null) return;
+            THUMBS.put(url, bm);
+            iv.post(() -> iv.setImageBitmap(bm));
+        });
     }
 
     /** Baja los últimos videos de cada canal por RSS (sin clave de API). */
@@ -674,6 +717,7 @@ public class HomeActivity extends Activity {
         int pos = root.getChildCount() - order.size();
         for (String id : order) {
             LinearLayout box = sections.get(id);
+            box.setVisibility(settings.isRowHidden(id) ? View.GONE : View.VISIBLE); // las que quitaste en Ajustes
             if (root.getChildAt(pos) != box) {
                 root.removeView(box);
                 root.addView(box, pos);

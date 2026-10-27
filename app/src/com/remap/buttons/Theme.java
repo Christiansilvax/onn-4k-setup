@@ -77,7 +77,10 @@ final class Theme {
     /** Fondo de pantalla: Aurora animable de día, degradado de siempre al atardecer y de noche. */
     static Drawable backdrop(Context c, int phase) {
         Theme t = current(c, phase);
-        if (t.light) return new Aurora(t == forPhase(phase) && phase == Weather.DAWN);
+        String bg = new LauncherSettings(c).background(); // el elegido en Ajustes (Fondo animado)
+        if (bg.startsWith("aurora:")) return Aurora.of(bg.substring(7), !t.light);
+        if (bg.equals("estrellas")) return new Stars(!t.light);
+        if (t.light) return new Aurora(t == forPhase(phase) && phase == Weather.DAWN).still(); // "auto": sin animación
         return new GradientDrawable(GradientDrawable.Orientation.TL_BR, background(c, phase));
     }
 

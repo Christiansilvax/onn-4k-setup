@@ -12,6 +12,7 @@ import android.os.Bundle;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
@@ -23,7 +24,11 @@ import android.widget.TextView;
 import android.widget.Toast;
 import java.io.File;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 import java.util.function.Supplier;
 
@@ -32,12 +37,17 @@ public class SettingsActivity extends Activity {
     private LauncherSettings st;
     private Theme theme;
     private LinearLayout col;
+    private FrameLayout frame;
+    private int phase;
     private final java.util.List<Runnable> refreshers = new java.util.ArrayList<>();
+    private Orderable moving; // lista en modo mover (flechas cambian el puesto), o null
+    private int movingAt;
+    private boolean okDown;
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         st = new LauncherSettings(this);
-        int phase = Weather.phase(null);
+        phase = Weather.phase(null);
         theme = Theme.current(this, phase);
 
         col = new LinearLayout(this);
@@ -71,7 +81,7 @@ public class SettingsActivity extends Activity {
         ScrollView sv = new ScrollView(this);
         sv.setClipChildren(false);
         sv.addView(col);
-        FrameLayout frame = new FrameLayout(this);
+        frame = new FrameLayout(this);
         frame.setBackground(Theme.backdrop(this, phase));
         frame.addView(sv, new FrameLayout.LayoutParams(-1, -1));
         setContentView(frame);
@@ -80,6 +90,36 @@ public class SettingsActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         for (Runnable r : refreshers) r.run(); // p. ej. permisos que se activaron fuera
+        if (frame.getBackground() instanceof Animated) ((Animated) frame.getBackground()).start(); // vista previa del fondo
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        if (moving != null) moving.finish();
+        if (frame.getBackground() instanceof Animated) ((Animated) frame.getBackground()).stop();
+    }
+
+    /** En modo mover: ↑↓ cambian la fila de puesto; OK o Atrás terminan y guardan. */
+    @Override public boolean dispatchKeyEvent(KeyEvent e) {
+        if (moving == null) return super.dispatchKeyEvent(e);
+        switch (e.getKeyCode()) {
+            case KeyEvent.KEYCODE_DPAD_UP:
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+                if (e.getAction() == KeyEvent.ACTION_DOWN) moving.moveBy(e.getKeyCode() == KeyEvent.KEYCODE_DPAD_UP ? -1 : 1);
+                return true;
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+            case KeyEvent.KEYCODE_DPAD_RIGHT:
+                return true;
+            case KeyEvent.KEYCODE_DPAD_CENTER:
+            case KeyEvent.KEYCODE_ENTER:
+            case KeyEvent.KEYCODE_BACK:
+                // el OK que eligió "Mover" en el menú suelta aquí: solo cuenta uno pulsado después
+                if (e.getAction() == KeyEvent.ACTION_DOWN) okDown = true;
+                else if (okDown) moving.finish();
+                return true;
+            default:
+                return super.dispatchKeyEvent(e);
+        }
     }
 
     // ---------- secciones ----------
@@ -91,32 +131,65 @@ public class SettingsActivity extends Activity {
                 () -> startActivity(new Intent(this, MainActivity.class)));
     }
 
-    /** Orden de las filas del inicio: OK sube la fila un puesto. */
+    /** Filas del inicio: las que se ven, en orden (OK: mover o quitar), y debajo las que se pueden agregar. */
     private void buildOrder() {
-        section("Orden del inicio");
-        final java.util.List<String> ids = new java.util.ArrayList<>(java.util.Arrays.asList("apps", "seguir", "youtube", "porque"));
-        for (Object[] r : Catalog.cachedRows(this)) {
-            String id = Catalog.sectionOf(r);
-            if (!ids.contains(id)) ids.add(id);
+        section("Filas del inicio");
+        final List<String> ids = new ArrayList<>(Arrays.asList("apps", "seguir", "youtube", "porque"));
+        for (Object[] r : Catalog.cachedRows(this)) addOnce(ids, Catalog.sectionOf(r));
+        // también las apps de contenido sin fila todavía (o quitadas), para poder agregarlas
+        for (String pkg : Catalog.cachedServices(this, null).keySet()) addOnce(ids, "pop:" + pkg);
+        for (String pkg : Catalog.screenApps(this)) addOnce(ids, "pop:" + pkg);
+        for (String[] it : Catalog.seen(this)) addOnce(ids, "seguir:" + it[3]); // Seguir mirando en Xuper, Netflix…
+        final List<String> shown = new ArrayList<>(), hidden = new ArrayList<>();
+        for (String id : st.sectionOrder(ids)) (st.isRowHidden(id) ? hidden : shown).add(id);
+        final Runnable save = () -> {
+            List<String> all = new ArrayList<>(shown);
+            all.addAll(hidden);
+            st.setSectionOrder(all);
+        };
+        final Orderable list = new Orderable(shown, save);
+        for (final String id : shown) {
+            list.add(row(rowIcon(id), sectionName(id), null, () -> "›",
+                    () -> menu(sectionName(id), new String[]{"Mover", "Quitar del inicio"}, w -> {
+                        if (w == 0) list.startMove(id);
+                        else {
+                            st.setRowHidden(id, true);
+                            recreate();
+                        }
+                    })));
         }
-        java.util.List<String> order = st.sectionOrder(ids);
-        for (int i = 0; i < order.size(); i++) {
-            final String id = order.get(i);
-            row(null, (i + 1) + ".  " + sectionName(id), i == 0 ? "OK la pasa al final." : "OK la sube un puesto.", () -> "↑",
-                    () -> {
-                        st.moveUp(id, ids);
-                        recreate();
-                    });
+        if (Catalog.enabled() && Catalog.cachedServices(this, null).isEmpty()) {
+            row(null, "Popular en tus apps", "Tus apps de streaming aparecen aquí después de abrir el inicio con internet.", () -> "", null);
         }
+        if (hidden.isEmpty()) return;
+        subsection("Agregar filas");
+        for (final String id : hidden) {
+            row(rowIcon(id), sectionName(id), null, () -> "+  Agregar", () -> {
+                st.setRowHidden(id, false);
+                hidden.remove(id);
+                shown.add(id); // entra al final
+                save.run();
+                recreate();
+            });
+        }
+    }
+
+    private static void addOnce(List<String> l, String id) { if (!l.contains(id)) l.add(id); }
+
+    private Drawable rowIcon(String id) {
+        String pkg = id.startsWith("pop:") ? id.substring(4) : id.startsWith("seguir:") ? id.substring(7) : null;
+        if (pkg == null) return null;
+        try { return getPackageManager().getApplicationIcon(pkg); } catch (Exception e) { return null; }
     }
 
     private String sectionName(String id) {
         switch (id) {
             case "apps": return "Tus apps";
-            case "seguir": return "Seguir mirando";
+            case "seguir": return "Seguir mirando en YouTube";
             case "youtube": return "Recomendaciones de YouTube";
             case "porque": return "Porque viste…";
-            default: return "Popular en " + Catalog.label(this, id.substring(4));
+            default: return id.startsWith("seguir:") ? "Seguir mirando en " + Catalog.label(this, id.substring(7))
+                    : "Popular en " + Catalog.label(this, id.substring(4));
         }
     }
 
@@ -139,21 +212,74 @@ public class SettingsActivity extends Activity {
         toggle("Banner grande", "Videos recomendados y tus apps de streaming arriba del inicio.", "banner", st::showHero);
         toggle("Clima", "Temperatura y lugar junto a la hora.", "clima", st::showWeather);
         toggle("Red", "Señal y nombre del Wi-Fi junto a la hora; OK abre los ajustes de red.", "wifi", st::showWifi);
+        row(null, "Fondo animado", "Se mueve solo mientras ves el inicio; al abrir una app se detiene.",
+                () -> backgroundName(st.background()),
+                () -> {
+                    List<String> all = Arrays.asList(LauncherSettings.BACKGROUNDS);
+                    st.setBackground(LauncherSettings.BACKGROUNDS[(all.indexOf(st.background()) + 1) % all.size()]);
+                    // vista previa aquí mismo, sin perder el cursor
+                    if (frame.getBackground() instanceof Animated) ((Animated) frame.getBackground()).stop();
+                    frame.setBackground(Theme.backdrop(this, phase));
+                    if (frame.getBackground() instanceof Animated) ((Animated) frame.getBackground()).start();
+                });
         toggle("Fondo con la miniatura", "Al enfocar un video, su imagen desenfocada de fondo.", "fondo", st::showBackdrop);
     }
 
+    private static String backgroundName(String b) {
+        switch (b) {
+            case "aurora:cielo": return "Aurora · Cielo";
+            case "aurora:atardecer": return "Aurora · Atardecer";
+            case "aurora:oceano": return "Aurora · Océano";
+            case "aurora:bosque": return "Aurora · Bosque";
+            case "aurora:neon": return "Aurora · Neón";
+            case "estrellas": return "Estrellas";
+            default: return "Sin animación";
+        }
+    }
+
+    /** Apps del inicio: las visibles en orden (OK: mover u ocultar) y debajo las ocultas para volver a mostrarlas. */
     private void buildApps() {
         section("Apps del inicio");
+        final Prefs prefs = new Prefs(this);
+        final List<Prefs.AppEntry> all = prefs.listApps(true);
+        final List<String> shown = new ArrayList<>();
+        final List<Prefs.AppEntry> hidden = new ArrayList<>();
+        for (Prefs.AppEntry a : all) {
+            if (st.isHidden(a.pkg)) hidden.add(a);
+            else shown.add(a.pkg);
+        }
+        final Orderable list = new Orderable(shown, () -> {
+            // las visibles en su orden nuevo; las ocultas quedan detrás
+            List<Prefs.AppEntry> out = new ArrayList<>();
+            for (String p : shown) for (Prefs.AppEntry a : all) if (a.pkg.equals(p)) out.add(a);
+            out.addAll(hidden);
+            prefs.saveOrder(out);
+        });
+        for (final Prefs.AppEntry a : all) {
+            if (st.isHidden(a.pkg)) continue;
+            list.add(row(a.icon, a.label, null, () -> "›",
+                    () -> menu(a.label, new String[]{"Mover", "Ocultar del inicio"}, w -> {
+                        if (w == 0) list.startMove(a.pkg);
+                        else {
+                            st.setHidden(a.pkg, true);
+                            recreate();
+                        }
+                    })));
+        }
         row(null, "Restablecer el orden", "Vuelve al orden inicial; las apps que moviste regresan a su sitio.",
                 () -> "›",
                 () -> {
-                    new Prefs(this).resetOrder();
+                    prefs.resetOrder();
                     toast("Orden restablecido");
+                    recreate();
                 });
-        for (final Prefs.AppEntry a : new Prefs(this).listApps(true)) {
-            row(a.icon, a.label, null,
-                    () -> st.isHidden(a.pkg) ? "Oculta" : "Visible",
-                    () -> st.setHidden(a.pkg, !st.isHidden(a.pkg)));
+        if (hidden.isEmpty()) return;
+        subsection("Agregar apps");
+        for (final Prefs.AppEntry a : hidden) {
+            row(a.icon, a.label, null, () -> "+  Mostrar", () -> {
+                st.setHidden(a.pkg, false);
+                recreate();
+            });
         }
     }
 
@@ -169,7 +295,6 @@ public class SettingsActivity extends Activity {
                     int s = st.barCloseSeconds();
                     st.setBarCloseSeconds(s == 60 ? 300 : s == 300 ? 0 : 60);
                 });
-        toggle("Recomendaciones de YouTube", "Sugerencias de lo que ves en TizenTube o YouTube.", "recomendaciones", st::showReco);
         row(null, "Borrar historial y recomendaciones", "Vacía \"Seguir mirando\", los canales aprendidos y las recomendaciones.",
                 () -> "›",
                 () -> confirm("¿Borrar el historial?", "Se borran \"Seguir mirando\", los canales aprendidos, las recomendaciones y los minutos guardados.", () -> {
@@ -185,7 +310,6 @@ public class SettingsActivity extends Activity {
         }
         toggle("Aprender lo que veo", "Anota lo que pones en Netflix, Prime, Claro, Paramount+… para \"Seguir mirando\" y \"Porque viste\".",
                 "aprender", st::learnApps);
-        toggle("Porque viste…", "Títulos parecidos a lo último que viste que estén en tus apps.", "porqueViste", st::showBecause);
         row(null, "País del catálogo", "Lo que hay en cada app cambia según el país.",
                 () -> {
                     String c = st.country();
@@ -197,17 +321,6 @@ public class SettingsActivity extends Activity {
                     java.util.List<String> all = java.util.Arrays.asList(Catalog.COUNTRIES);
                     st.setCountry(Catalog.COUNTRIES[(all.indexOf(st.country()) + 1) % Catalog.COUNTRIES.length]);
                 });
-        java.util.Map<String, Integer> services = Catalog.cachedServices(this, null);
-        if (Catalog.enabled() && services.isEmpty()) {
-            row(null, "Popular en tus apps", "Tus apps de streaming aparecen aquí después de abrir el inicio con internet.", () -> "", null);
-        }
-        for (final String pkg : services.keySet()) {
-            Drawable icon = null;
-            try { icon = getPackageManager().getApplicationIcon(pkg); } catch (Exception ignored) { }
-            row(icon, "Popular en " + Catalog.label(this, pkg), null,
-                    () -> st.isServiceOff(pkg) ? "No" : "Sí",
-                    () -> st.setServiceOff(pkg, !st.isServiceOff(pkg)));
-        }
         row(null, "Borrar lo aprendido", "Vacía lo que viste en tus apps y las filas del catálogo.",
                 () -> "›",
                 () -> confirm("¿Borrar lo aprendido?", "Se borra lo que viste en Netflix, Prime y las demás apps.", () -> {
@@ -286,7 +399,7 @@ public class SettingsActivity extends Activity {
     }
 
     /** Fila de cristal: ícono opcional, nombre, descripción y valor a la derecha. OK ejecuta la acción y refresca el valor. */
-    private void row(Drawable icon, String label, String desc, final Supplier<String> value, final Runnable action) {
+    private View row(Drawable icon, String label, String desc, final Supplier<String> value, final Runnable action) {
         LinearLayout r = new LinearLayout(this);
         r.setGravity(Gravity.CENTER_VERTICAL);
         r.setPadding(dp(20), dp(14), dp(24), dp(14));
@@ -322,6 +435,70 @@ public class SettingsActivity extends Activity {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.bottomMargin = dp(8);
         col.addView(r, lp);
+        return r;
+    }
+
+    private void subsection(String s) {
+        TextView t = text(s, 16, theme.textSoft, true);
+        t.setPadding(dp(6), dp(16), 0, dp(8));
+        col.addView(t);
+    }
+
+    private void menu(String title, String[] items, java.util.function.IntConsumer pick) {
+        new AlertDialog.Builder(this, theme.light ? android.R.style.Theme_DeviceDefault_Light_Dialog_Alert
+                : android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle(title)
+                .setItems(items, (d, w) -> pick.accept(w))
+                .show();
+    }
+
+    /**
+     * Filas seguidas de Ajustes que se pueden reordenar (filas del inicio, apps). Al mover se cambia de lado la fila
+     * vecina, no la enfocada, así el cursor no se pierde; al terminar se guarda el orden.
+     */
+    private final class Orderable {
+        final List<String> ids;
+        final Runnable save;
+        final List<View> views = new ArrayList<>();
+
+        Orderable(List<String> ids, Runnable save) {
+            this.ids = ids;
+            this.save = save;
+        }
+
+        void add(View v) { views.add(v); }
+
+        void startMove(String id) {
+            moving = this;
+            movingAt = ids.indexOf(id);
+            okDown = false;
+            value(movingAt, "↕  Moviendo");
+            views.get(movingAt).requestFocus();
+            toast("Muévela con ↑ ↓. OK o Atrás para terminar.");
+        }
+
+        void moveBy(int step) {
+            int i = movingAt, j = i + step;
+            if (j < 0 || j >= ids.size()) return;
+            final View a = views.get(i), b = views.get(j);
+            col.removeView(b);
+            col.addView(b, col.indexOfChild(a) + (step < 0 ? 1 : 0));
+            Collections.swap(ids, i, j);
+            Collections.swap(views, i, j);
+            movingAt = j;
+            a.post(() -> a.requestRectangleOnScreen(new android.graphics.Rect(0, -dp(60), a.getWidth(), a.getHeight() + dp(60))));
+        }
+
+        void finish() {
+            value(movingAt, "›");
+            moving = null;
+            save.run();
+        }
+
+        private void value(int i, String s) {
+            ViewGroup r = (ViewGroup) views.get(i);
+            ((TextView) r.getChildAt(r.getChildCount() - 1)).setText(s);
+        }
     }
 
     // ---------- ayudas ----------

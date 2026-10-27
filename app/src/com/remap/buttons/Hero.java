@@ -36,7 +36,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Banner grande del inicio: rota entre lo último que viste, recomendaciones y tus apps de streaming.
+ * Banner grande del inicio: lo último que viste, recomendaciones y tus apps de streaming (no rota solo: gasta GPU).
  * OK reproduce el video o abre la app; ← → cambian.
  */
 final class Hero extends FrameLayout {
@@ -48,8 +48,6 @@ final class Hero extends FrameLayout {
     /** Prefijo del id para las diapositivas de apps ({APP + paquete, nombre, etiqueta}). */
     static final String APP = "app:";
 
-    private static final long ROTATE_MS = 9000;
-
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Map<String, Bitmap> thumbs = new HashMap<>();
     private final Opener opener;
@@ -60,12 +58,6 @@ final class Hero extends FrameLayout {
     private List<String[]> items = new ArrayList<>(); // {id, título, etiqueta[, imagen]}
     private int idx;
 
-    private final Runnable rotate = new Runnable() {
-        @Override public void run() {
-            if (!hasFocus() && items.size() > 1) show((idx + 1) % items.size());
-            main.postDelayed(this, ROTATE_MS);
-        }
-    };
 
     Hero(Context c, Theme theme, Opener o) {
         super(c);
@@ -172,8 +164,6 @@ final class Hero extends FrameLayout {
         show(keep);
     }
 
-    void start() { main.removeCallbacks(rotate); main.postDelayed(rotate, ROTATE_MS); }
-    void stop() { main.removeCallbacks(rotate); }
 
     @Override public boolean onKeyDown(int code, KeyEvent ev) {
         if (items.size() > 1 && (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)) {
@@ -271,7 +261,9 @@ final class Hero extends FrameLayout {
             c.setReadTimeout(8000);
             if (c.getResponseCode() != 200) return null;
             InputStream in = c.getInputStream();
-            Bitmap bm = BitmapFactory.decodeStream(in);
+            BitmapFactory.Options o = new BitmapFactory.Options();
+            o.inPreferredConfig = Bitmap.Config.RGB_565; // fotos sin transparencia: la mitad de memoria
+            Bitmap bm = BitmapFactory.decodeStream(in, null, o);
             in.close();
             return bm;
         } catch (Exception e) { return null; }

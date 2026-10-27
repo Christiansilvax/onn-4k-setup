@@ -84,28 +84,60 @@ final class LauncherSettings {
         for (String id : ids) if (!out.contains(id)) rest.add(id);
         rest.sort((a, b) -> defaultRank(a) - defaultRank(b));
         if (saved.size() <= 1) return rest; // sin orden guardado: el de fábrica
-        out.addAll(rest);
+        for (String id : rest) {
+            // una fila nueva de "Seguir mirando en <app>" va junto a la de YouTube, no al final
+            int at = id.startsWith("seguir:") ? out.indexOf("seguir") : -1;
+            if (at >= 0) out.add(at, id);
+            else out.add(id);
+        }
         return out;
     }
 
     private int defaultRank(String id) {
-        if (id.equals("seguir")) return 0;
-        if (id.startsWith("pop:") && Catalog.isScreenApp(ctx, id.substring(4))) return 1;
-        if (id.equals("apps")) return 2;
-        if (id.equals("youtube")) return 3;
-        if (id.equals("porque")) return 4;
-        return 5;
+        // lo que ibas viendo en Xuper primero; luego lo de YouTube y lo de las demás apps
+        if (id.startsWith("seguir:")) return Catalog.isScreenApp(ctx, id.substring(7)) ? 0 : 1;
+        if (id.equals("seguir")) return 1;
+        if (id.startsWith("pop:") && Catalog.isScreenApp(ctx, id.substring(4))) return 2;
+        if (id.equals("apps")) return 3;
+        if (id.equals("youtube")) return 4;
+        if (id.equals("porque")) return 5;
+        return 6;
     }
 
-    /** Sube una sección un puesto (la primera pasa al final). */
-    void moveUp(String id, List<String> ids) {
-        List<String> order = sectionOrder(ids);
-        int i = order.indexOf(id);
-        if (i < 0) return;
-        order.remove(i);
-        order.add(i == 0 ? order.size() : i - 1, id);
-        save(sp.edit().putString("ordenInicio", android.text.TextUtils.join(",", order)));
+    /** Guarda el orden de las filas (las visibles primero; las ocultas detrás, en su orden). */
+    void setSectionOrder(List<String> order) { save(sp.edit().putString("ordenInicio", android.text.TextUtils.join(",", order))); }
+
+    /**
+     * Fila quitada del inicio. Las que ya tenían su ajuste lo reutilizan (así tampoco se piden a internet):
+     * YouTube = recomendaciones, Porque viste = porqueViste, Popular en <app> = sinCatalogo.
+     */
+    boolean isRowHidden(String id) {
+        if (id.equals("youtube")) return !showReco();
+        if (id.equals("porque")) return !showBecause();
+        if (id.startsWith("pop:")) return isServiceOff(id.substring(4));
+        return Arrays.asList(sp.getString("filasOcultas", "").split(",")).contains(id);
     }
+
+    void setRowHidden(String id, boolean hidden) {
+        if (id.equals("youtube")) { setBool("recomendaciones", !hidden); return; }
+        if (id.equals("porque")) { setBool("porqueViste", !hidden); return; }
+        if (id.startsWith("pop:")) { setServiceOff(id.substring(4), hidden); return; }
+        List<String> l = new ArrayList<>(Arrays.asList(sp.getString("filasOcultas", "").split(",")));
+        l.remove("");
+        l.remove(id);
+        if (hidden) l.add(id);
+        save(sp.edit().putString("filasOcultas", android.text.TextUtils.join(",", l)));
+    }
+
+    /** Fondo animado: "auto" (sin animación: Aurora quieta de día, degradado de noche), "aurora:<paleta>" o "estrellas". */
+    static final String[] BACKGROUNDS = {"auto", "aurora:cielo", "aurora:atardecer", "aurora:oceano", "aurora:bosque", "aurora:neon", "estrellas"};
+    String background() {
+        // las primeras versiones dejaban la Aurora animada; desde que es opcional todas las cajas arrancan quietas
+        if (!sp.getBoolean("fondoQuieto", false)) sp.edit().putBoolean("fondoQuieto", true).putString("fondoAnimado", "auto").commit();
+        return sp.getString("fondoAnimado", "auto");
+    }
+    void setBackground(String b) { save(sp.edit().putString("fondoAnimado", b)); }
+
     void setTheme(String t) { save(sp.edit().putString("tema", t)); }
     void setBool(String key, boolean v) { save(sp.edit().putBoolean(key, v)); }
     void setBarCloseSeconds(int s) { save(sp.edit().putInt("cierreBarra", s)); }
@@ -120,5 +152,5 @@ final class LauncherSettings {
 
     /** Claves que van al respaldo (sin "stamp", que es solo interno). */
     static final List<String> BACKUP_KEYS = Arrays.asList("tema", "banner", "clima", "wifi", "fondo", "barra", "recomendaciones", "cierreBarra", "ocultas", "inicioPropio",
-            "aprender", "porqueViste", "pais", "sinCatalogo", "ordenInicio");
+            "aprender", "porqueViste", "pais", "sinCatalogo", "ordenInicio", "filasOcultas", "fondoAnimado");
 }

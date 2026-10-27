@@ -74,7 +74,6 @@ final class NowPlaying extends LinearLayout {
     private String localId, localTitle; // video que suena aquí (null si no)
     private double localPos, localDur;
     private int localState = -1;
-    private final Runnable warm = this::warm;
 
     private final MediaController.Callback cb = new MediaController.Callback() {
         @Override public void onMetadataChanged(MediaMetadata m) { update(); }
@@ -159,7 +158,6 @@ final class NowPlaying extends LinearLayout {
             update(); // sin lector de notificaciones: solo lo local y el último video visto
         }
         main.post(tick);
-        main.postDelayed(warm, 800); // apenas se pinta el inicio
     }
 
     /**
@@ -168,7 +166,6 @@ final class NowPlaying extends LinearLayout {
      */
     void stop() {
         main.removeCallbacks(tick);
-        main.removeCallbacks(warm);
         main.removeCallbacks(autoClose);
         if (msm != null) msm.removeOnActiveSessionsChangedListener(sessions);
         if (ctl != null) ctl.unregisterCallback(cb);
@@ -196,13 +193,6 @@ final class NowPlaying extends LinearLayout {
         }
         webId = null;
         webReady = false;
-    }
-
-    /** Deja cargado en pausa el último video visto, en su minuto. */
-    private void warm() {
-        if (localId != null || remoteShown() || lastShown == null || lastShown[0].equals(webId)) return;
-        long[] p = Videos.position(act, lastShown[0]);
-        loadPlayer(lastShown[0], p != null ? p[0] : 0, false);
     }
 
     // ---------- modos ----------

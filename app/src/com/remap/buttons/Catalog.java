@@ -307,7 +307,7 @@ final class Catalog {
     }
 
     /** Apps de las que se leyó algo en pantalla (sin catálogo en TMDB, como Xuper) y siguen instaladas. */
-    private static List<String> screenApps(Context c) {
+    static List<String> screenApps(Context c) {
         List<String> out = new ArrayList<>();
         for (String k : sp(c).getAll().keySet()) {
             if (!k.startsWith("pantalla_")) continue;
