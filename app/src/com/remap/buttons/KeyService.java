@@ -17,11 +17,33 @@ public class KeyService extends AccessibilityService {
     private static final String GOOGLE_HOME = "com.google.android.apps.tv.launcherx";
 
     private final Handler main = new Handler(Looper.getMainLooper());
+    private ScreenTitles titles;
+    private AppSearch search;
+    private static volatile KeyService running;
+
+    /** Al abrirse la app, busca el título dentro de ella (ver AppSearch). No hace nada en la versión de Play Store. */
+    static void searchIn(String pkg, String query, boolean history) {
+        KeyService s = running;
+        if (s == null || !Keys.SIDELOAD) return;
+        s.main.post(() -> s.search.start(pkg, query, history));
+    }
 
     @Override protected void onServiceConnected() {
         new Prefs(this).restoreIfEmpty();
         // al encender, el inicio de Google puede aparecer antes que este servicio: se revisa qué hay en pantalla
         main.postDelayed(this::replaceIfGoogleHome, 1500);
+        search = new AppSearch(this, main);
+        running = this;
+        if (ScreenTitles.available()) {
+            titles = new ScreenTitles(this, main);
+            titles.start();
+        }
+    }
+
+    @Override public void onDestroy() {
+        running = null;
+        if (titles != null) titles.stop();
+        super.onDestroy();
     }
 
     private void replaceIfGoogleHome() {
@@ -38,6 +60,7 @@ public class KeyService extends AccessibilityService {
      */
     @Override public void onAccessibilityEvent(AccessibilityEvent e) {
         if (e.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return;
+        if (titles != null && e.getPackageName() != null) titles.windowChanged();
         if (!GOOGLE_HOME.equals(String.valueOf(e.getPackageName()))) return;
         CharSequence cls = e.getClassName();
         if (cls == null || !cls.toString().endsWith(".home.HomeActivity")) return;

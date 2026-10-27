@@ -63,9 +63,11 @@ public class SettingsActivity extends Activity {
         col.addView(head);
 
         buildButtons();
+        buildOrder();
         buildLook();
         buildApps();
         buildPlayback();
+        buildCatalog();
         buildBackup();
 
         ScrollView sv = new ScrollView(this);
@@ -91,6 +93,35 @@ public class SettingsActivity extends Activity {
                 () -> startActivity(new Intent(this, MainActivity.class)));
     }
 
+    /** Orden de las filas del inicio: OK sube la fila un puesto. */
+    private void buildOrder() {
+        section("Orden del inicio");
+        final java.util.List<String> ids = new java.util.ArrayList<>(java.util.Arrays.asList("apps", "seguir", "youtube", "porque"));
+        for (Object[] r : Catalog.cachedRows(this)) {
+            String id = Catalog.sectionOf(r);
+            if (!ids.contains(id)) ids.add(id);
+        }
+        java.util.List<String> order = st.sectionOrder(ids);
+        for (int i = 0; i < order.size(); i++) {
+            final String id = order.get(i);
+            row(null, (i + 1) + ".  " + sectionName(id), i == 0 ? "OK la pasa al final." : "OK la sube un puesto.", () -> "↑",
+                    () -> {
+                        st.moveUp(id, ids);
+                        recreate();
+                    });
+        }
+    }
+
+    private String sectionName(String id) {
+        switch (id) {
+            case "apps": return "Tus apps";
+            case "seguir": return "Seguir mirando";
+            case "youtube": return "Recomendaciones de YouTube";
+            case "porque": return "Porque viste…";
+            default: return "Popular en " + Catalog.label(this, id.substring(4));
+        }
+    }
+
     private void buildLook() {
         section("Apariencia");
         toggle("Abrir siempre este inicio", "Al encender la caja o si aparece el inicio de Google TV, se abre este. Con \"No\" puedes usar el de Google.",
@@ -109,6 +140,7 @@ public class SettingsActivity extends Activity {
                 });
         toggle("Banner grande", "Videos recomendados y tus apps de streaming arriba del inicio.", "banner", st::showHero);
         toggle("Clima", "Temperatura y lugar junto a la hora.", "clima", st::showWeather);
+        toggle("Red", "Señal y nombre del Wi-Fi junto a la hora; OK abre los ajustes de red.", "wifi", st::showWifi);
         toggle("Fondo con la miniatura", "Al enfocar un video, su imagen desenfocada de fondo.", "fondo", st::showBackdrop);
     }
 
@@ -148,6 +180,49 @@ public class SettingsActivity extends Activity {
                 }));
     }
 
+    private void buildCatalog() {
+        section("Contenido de tus apps");
+        if (!Catalog.enabled()) {
+            row(null, "Catálogo sin configurar", "Esta versión se compiló sin la clave de TMDB (tmdb.key): solo se aprende lo que ves.", () -> "", null);
+        }
+        toggle("Aprender lo que veo", "Anota lo que pones en Netflix, Prime, Claro, Paramount+… para \"Seguir mirando\" y \"Porque viste\".",
+                "aprender", st::learnApps);
+        toggle("Porque viste…", "Títulos parecidos a lo último que viste que estén en tus apps.", "porqueViste", st::showBecause);
+        row(null, "País del catálogo", "Lo que hay en cada app cambia según el país.",
+                () -> {
+                    String c = st.country();
+                    if (!c.isEmpty()) return new Locale("", c).getDisplayCountry(new Locale("es"));
+                    String auto = Catalog.autoCountry(this);
+                    return "Automático" + (auto.isEmpty() ? "" : " (" + new Locale("", auto).getDisplayCountry(new Locale("es")) + ")");
+                },
+                () -> {
+                    java.util.List<String> all = java.util.Arrays.asList(Catalog.COUNTRIES);
+                    st.setCountry(Catalog.COUNTRIES[(all.indexOf(st.country()) + 1) % Catalog.COUNTRIES.length]);
+                });
+        java.util.Map<String, Integer> services = Catalog.cachedServices(this, null);
+        if (Catalog.enabled() && services.isEmpty()) {
+            row(null, "Popular en tus apps", "Tus apps de streaming aparecen aquí después de abrir el inicio con internet.", () -> "", null);
+        }
+        for (final String pkg : services.keySet()) {
+            Drawable icon = null;
+            try { icon = getPackageManager().getApplicationIcon(pkg); } catch (Exception ignored) { }
+            row(icon, "Popular en " + Catalog.label(this, pkg), null,
+                    () -> st.isServiceOff(pkg) ? "No" : "Sí",
+                    () -> st.setServiceOff(pkg, !st.isServiceOff(pkg)));
+        }
+        row(null, "Borrar lo aprendido", "Vacía lo que viste en tus apps y las filas del catálogo.",
+                () -> "›",
+                () -> confirm("¿Borrar lo aprendido?", "Se borra lo que viste en Netflix, Prime y las demás apps.", () -> {
+                    Catalog.clear(this);
+                    toast("Borrado");
+                }));
+        TextView credit = text("Catálogo y \"dónde verlo\": TMDB y JustWatch. Este producto usa la API de TMDB pero no está avalado ni certificado por TMDB.",
+                13, theme.textSoft, false);
+        credit.setSingleLine(false);
+        credit.setPadding(dp(6), dp(4), 0, 0);
+        col.addView(credit);
+    }
+
     private void buildBackup() {
         section("Respaldo y datos");
         row(null, "Archivo de respaldo", "Botones, orden, historial y ajustes. No se borra al desinstalar.",
@@ -177,7 +252,9 @@ public class SettingsActivity extends Activity {
                 Prefs::canBackup, null);
         permission("Ubicación", "Para el clima del lugar donde está la caja. Lo activa instalar.ps1.",
                 () -> checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED, null);
-        permission("Notificaciones", "Para saber qué ves en TizenTube o YouTube (Seguir mirando, barra).",
+        permission("Nombre del Wi-Fi", "Android solo deja leer el nombre de la red con ubicación precisa. Lo activa instalar.ps1.",
+                () -> checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED, null);
+        permission("Notificaciones", "Para saber qué ves en YouTube, Netflix, Prime… (Seguir mirando, Porque viste, barra).",
                 () -> {
                     String l = Settings.Secure.getString(getContentResolver(), "enabled_notification_listeners");
                     return l != null && l.contains(getPackageName() + "/");

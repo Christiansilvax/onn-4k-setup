@@ -1,8 +1,11 @@
 # Compila remap.apk desde app/ (launcher + servicio de botones) sin Android Studio ni Gradle.
-# Uso:  powershell -ExecutionPolicy Bypass -File compilar.ps1
+# Uso:  powershell -ExecutionPolicy Bypass -File compilar.ps1 [-PlayStore]
+#       -PlayStore: sin leer la pantalla de otras apps (Xuper) con accesibilidad, que Play Store no admite.
 # Necesita: JDK 17+ y el SDK de Android con una plataforma (android-37*) y build-tools (36+).
 # La primera vez crea remap.keystore junto al script. Guardala: sin ella las versiones nuevas
 # no se pueden instalar encima y hay que desinstalar la APK antes (git no la guarda).
+
+param([switch]$PlayStore)
 
 $ErrorActionPreference = "Stop"
 $app   = Join-Path $PSScriptRoot "app"
@@ -49,6 +52,15 @@ Write-Host "1/6 Recursos (aapt2)..."
 Run "$bt\aapt2.exe" compile --dir "$app\res" -o "$build\res.zip"
 Run "$bt\aapt2.exe" link -o "$build\base.apk" -I $jar --manifest "$app\AndroidManifest.xml" `
     --min-sdk-version $minSdk --target-sdk-version $targetSdk --java "$build\gen" "$build\res.zip"
+
+# clave de TMDB para el catalogo de tus apps (tmdb.key, fuera de git); sin ella solo se aprende lo que ves
+$tmdbFile = Join-Path $PSScriptRoot "tmdb.key"
+$tmdb = if (Test-Path $tmdbFile) { (Get-Content $tmdbFile -Raw).Trim() } else { "" }
+if (-not $tmdb) { Write-Host "Sin tmdb.key: la APK sale sin catalogo (Porque viste / Popular en...)." }
+New-Item -ItemType Directory -Force "$build\gen\com\remap\buttons" | Out-Null
+$sideload = if ($PlayStore) { "false" } else { "true" }
+[System.IO.File]::WriteAllText("$build\gen\com\remap\buttons\Keys.java",
+    "package com.remap.buttons;`n/** Generado por compilar.ps1. */`nfinal class Keys {`n    static final String TMDB = `"$tmdb`";`n    static final boolean SIDELOAD = $sideload;`n}`n")
 
 Write-Host "2/6 Codigo Java (javac)..."
 $fuentes = Get-ChildItem "$app\src","$build\gen" -Recurse -Filter *.java | ForEach-Object { $_.FullName }

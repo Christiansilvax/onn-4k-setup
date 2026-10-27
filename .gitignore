@@ -1,3 +1,4 @@
 *.keystore
 *.idsig
 build/
+tmdb.key

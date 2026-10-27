@@ -42,6 +42,8 @@ public class HomeActivity extends Activity {
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private LinearLayout root, appsRow, recentRow, recoRow;
+    /** Bloques que se pueden ordenar en Ajustes (ver LauncherSettings.sectionOrder), por id. */
+    private final java.util.Map<String, LinearLayout> sections = new java.util.HashMap<>();
     private AppActions actions;
     private ImageView backdrop;
     private Bitmap shownBackdrop;
@@ -52,10 +54,12 @@ public class HomeActivity extends Activity {
     private int phase = -1;
     private Weather weather;
     private long weatherAt;
-    private boolean loadingWeather, loadingReco, focusedOnce;
+    private boolean loadingWeather, loadingReco, loadingCatalog, focusedOnce;
     private NowPlaying nowPlaying;
     private Hero hero;
+    private WifiChip wifi;
     private List<String[]> recos = new ArrayList<>();
+    private List<Object[]> catRows = new ArrayList<>(); // {título de la fila, títulos de Catalog}
     private Theme theme;
     private LauncherSettings settings;
     private long settingsStamp;
@@ -120,12 +124,14 @@ public class HomeActivity extends Activity {
         nlp.setMargins(dp(10), dp(14), dp(10), 0);
         root.addView(nowPlaying, nlp);
         buildApps();
-        recentTitle = title("Seguir mirando");
-        recentRow = row();
-        recoTitle = title("Recomendaciones para ti");
-        recoRow = row();
+        recentTitle = title(section("seguir"), "Seguir mirando");
+        recentRow = row(section("seguir"));
+        recoTitle = title(section("youtube"), "Recomendaciones para ti");
+        recoRow = row(section("youtube"));
         // al instante desde la caché; onResume la renueva si hace falta
         showReco(settings.showReco() ? Videos.cachedReco(this) : new ArrayList<>());
+        // "Porque viste…" y "Popular en <app>", del catálogo de TMDB
+        showCatalog(Catalog.enabled() ? Catalog.cachedRows(this) : new ArrayList<>());
     }
 
     @Override protected void onResume() {
@@ -138,8 +144,10 @@ public class HomeActivity extends Activity {
         refreshApps();
         refreshRecent();
         loadReco();
+        loadCatalog();
         if (settings.showBar()) nowPlaying.start();
         hero.start();
+        if (wifi != null) wifi.start();
         tick();
     }
 
@@ -153,6 +161,7 @@ public class HomeActivity extends Activity {
         main.removeCallbacksAndMessages(null);
         nowPlaying.stop();
         hero.stop();
+        if (wifi != null) wifi.stop();
         if (actions != null) actions.stop();
     }
 
@@ -218,6 +227,15 @@ public class HomeActivity extends Activity {
             items.add(new String[]{h.get(i)[0], h.get(i)[1], label});
         }
         for (int i = 0; i < recos.size() && items.size() < 7; i++) items.add(new String[]{recos.get(i)[0], recos.get(i)[1], "Recomendado para ti"});
+        // el primero de cada fila del catálogo, con su imagen grande
+        for (int r = 0; r < catRows.size() && r < 3; r++) {
+            List<String[]> l = Catalog.itemsOf(catRows.get(r));
+            if (l.isEmpty()) continue;
+            String[] it = l.get(0);
+            String row = (String) catRows.get(r)[0];
+            items.add(Math.min(items.size(), 1 + 2 * r), new String[]{it[0], it[1],
+                    row.startsWith("Porque") ? row : "En " + Catalog.label(this, it[3]), it[2]});
+        }
         // una app cada dos videos
         List<String[]> apps = new ArrayList<>();
         for (String pkg : STREAMING) {
@@ -290,6 +308,12 @@ public class HomeActivity extends Activity {
         theme.style(clock);
         clock.setTextSize(18);
         top.addView(clock);
+        if (settings.showWifi()) {
+            wifi = new WifiChip(this, theme);
+            LinearLayout.LayoutParams wlp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44));
+            wlp.leftMargin = dp(20);
+            top.addView(wifi, wlp);
+        }
         // ⚙ Ajustes del launcher
         ImageView gear = new ImageView(this);
         gear.setImageResource(R.drawable.ic_settings);
@@ -314,18 +338,22 @@ public class HomeActivity extends Activity {
         root.addView(top);
     }
 
-    private TextView title(String s) {
+    private TextView title(String s) { return title(root, s); }
+
+    private TextView title(ViewGroup parent, String s) {
         TextView t = new TextView(this);
         t.setText(s);
         t.setTextColor(theme.text);
         theme.style(t);
         t.setTextSize(22);
         t.setPadding(dp(4), dp(14), 0, dp(4));
-        root.addView(t);
+        parent.addView(t);
         return t;
     }
 
-    private LinearLayout row() {
+    private LinearLayout row() { return row(root); }
+
+    private LinearLayout row(ViewGroup parent) {
         HorizontalScrollView h = new HorizontalScrollView(this);
         h.setHorizontalScrollBarEnabled(false);
         h.setClipChildren(false);
@@ -334,13 +362,13 @@ public class HomeActivity extends Activity {
         l.setClipChildren(false);
         l.setPadding(dp(10), dp(14), dp(10), dp(14));
         h.addView(l);
-        root.addView(h);
+        parent.addView(h);
         return l;
     }
 
     private void buildApps() {
-        title("Tus apps");
-        appsRow = row();
+        title(section("apps"), "Tus apps");
+        appsRow = row(section("apps"));
     }
 
     /** Redibuja la fila si cambiaron las apps (instaladas, desinstaladas o movidas en otra pantalla). */
@@ -405,9 +433,18 @@ public class HomeActivity extends Activity {
     private void refreshRecent() {
         recentRow.removeAllViews();
         List<String[]> h = Videos.history(this);
-        recentTitle.setVisibility(h.isEmpty() ? View.GONE : View.VISIBLE);
-        ((View) recentRow.getParent()).setVisibility(h.isEmpty() ? View.GONE : View.VISIBLE);
-        for (String[] v : h) recentRow.addView(videoCard(v[0], v[1]), cardLp());
+        List<String[]> apps = settings.learnApps() ? Catalog.seen(this) : new ArrayList<>();
+        boolean empty = h.isEmpty() && apps.isEmpty();
+        recentTitle.setVisibility(empty ? View.GONE : View.VISIBLE);
+        ((View) recentRow.getParent()).setVisibility(empty ? View.GONE : View.VISIBLE);
+        // YouTube y las demás apps juntos, de lo más reciente a lo más viejo (cada lista ya viene así ordenada)
+        int a = 0, y = 0;
+        while (a < apps.size() || y < h.size()) {
+            long ta = a < apps.size() && apps.get(a).length > 4 ? Long.parseLong(apps.get(a)[4]) : (a < apps.size() ? 0 : -1);
+            long ty = y < h.size() ? Videos.seenAt(this, h.get(y)[0]) : -1;
+            if (a < apps.size() && (y >= h.size() || ta >= ty)) recentRow.addView(catalogCard(apps.get(a++)), cardLp());
+            else recentRow.addView(videoCard(h.get(y)[0], h.get(y++)[1]), cardLp());
+        }
         updateHero();
     }
 
@@ -418,6 +455,15 @@ public class HomeActivity extends Activity {
     }
 
     private View videoCard(final String id, final String name) {
+        return card(name, "https://i.ytimg.com/vi/" + id + "/mqdefault.jpg", null, Videos.position(this, id), v -> openVideo(id, name));
+    }
+
+    /** Título de otra app: su imagen (o el banner de la app si no hay) con el ícono de la app en la esquina. */
+    private View catalogCard(final String[] it) {
+        return card(it[1], it[2].isEmpty() ? null : it[2], it[3], null, v -> Catalog.open(this, it[0], it[1]));
+    }
+
+    private View card(String name, String image, String appPkg, long[] p, View.OnClickListener click) {
         LinearLayout c = new LinearLayout(this);
         c.setOrientation(LinearLayout.VERTICAL);
         c.setFocusable(true);
@@ -432,7 +478,22 @@ public class HomeActivity extends Activity {
         // miniatura con la barra roja de lo ya visto, como en YouTube
         FrameLayout thumb = new FrameLayout(this);
         thumb.addView(iv, new FrameLayout.LayoutParams(-1, -1));
-        long[] p = Videos.position(this, id);
+        if (image == null && appPkg != null) {
+            iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            iv.setBackgroundColor(theme.chip);
+            try { iv.setImageDrawable(getPackageManager().getApplicationBanner(appPkg)); } catch (Exception ignored) { }
+        }
+        if (appPkg != null && image != null) {
+            ImageView badge = new ImageView(this);
+            try { badge.setImageDrawable(getPackageManager().getApplicationIcon(appPkg)); } catch (Exception ignored) { }
+            badge.setOutlineProvider(new android.view.ViewOutlineProvider() {
+                @Override public void getOutline(View v, android.graphics.Outline o) { o.setRoundRect(0, 0, v.getWidth(), v.getHeight(), dp(6)); }
+            });
+            badge.setClipToOutline(true);
+            FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(dp(30), dp(30), Gravity.TOP | Gravity.END);
+            blp.setMargins(0, dp(6), dp(6), 0);
+            thumb.addView(badge, blp);
+        }
         if (p != null && p[1] > 0) {
             View bar = new View(this);
             bar.setBackgroundColor(0xFFFF2D2D);
@@ -450,14 +511,18 @@ public class HomeActivity extends Activity {
         t.setMaxLines(2);
         t.setPadding(dp(6), dp(6), dp(6), dp(4));
         c.addView(t);
-        c.setOnClickListener(v -> openVideo(id, name));
+        c.setOnClickListener(click);
         glass(c, iv);
-        fetchThumb(id, iv);
+        if (image != null) fetchThumb(image, iv);
         return c;
     }
 
     /** Abre el video en la app donde se vio (TizenTube o YouTube), continuando donde quedó. */
     private void openVideo(String id, String name) {
+        if (id.startsWith(Catalog.PREFIX)) { // título de Netflix, Prime… (desde el banner)
+            Catalog.open(this, id, name);
+            return;
+        }
         String app = Videos.player(this, id);
         if (app == null) return; // ni TizenTube ni YouTube instalados
         Videos.remember(this, id, name, app);
@@ -470,10 +535,10 @@ public class HomeActivity extends Activity {
         try { startActivity(i); } catch (Exception ignored) { }
     }
 
-    private void fetchThumb(final String id, final ImageView iv) {
+    private void fetchThumb(final String url, final ImageView iv) {
         new Thread(() -> {
             try {
-                HttpURLConnection c = (HttpURLConnection) new URL("https://i.ytimg.com/vi/" + id + "/mqdefault.jpg").openConnection();
+                HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
                 c.setConnectTimeout(8000);
                 c.setReadTimeout(8000);
                 InputStream in = c.getInputStream();
@@ -505,5 +570,57 @@ public class HomeActivity extends Activity {
         recoTitle.setVisibility(vids.isEmpty() ? View.GONE : View.VISIBLE);
         ((View) recoRow.getParent()).setVisibility(vids.isEmpty() ? View.GONE : View.VISIBLE);
         updateHero();
+    }
+
+    /** Recalcula las filas de tus apps en segundo plano si la caché es vieja, viste algo nuevo o cambiaron los ajustes. */
+    private void loadCatalog() {
+        if (!Catalog.enabled() || loadingCatalog) return;
+        loadingCatalog = true;
+        new Thread(() -> {
+            final boolean fixed = Catalog.completeSeen(this); // lo que viste sin imagen
+            final List<Object[]> rows = Catalog.stale(this, settings) ? Catalog.rows(this, settings) : null;
+            runOnUiThread(() -> {
+                loadingCatalog = false;
+                if (fixed) refreshRecent();
+                if (rows != null) showCatalog(rows);
+            });
+        }).start();
+    }
+
+    private void showCatalog(List<Object[]> rows) {
+        catRows = rows;
+        for (java.util.Map.Entry<String, LinearLayout> e : sections.entrySet()) {
+            if (e.getKey().equals("porque") || e.getKey().startsWith("pop:")) e.getValue().removeAllViews();
+        }
+        for (Object[] r : rows) {
+            LinearLayout box = section(Catalog.sectionOf(r));
+            title(box, (String) r[0]);
+            LinearLayout l = row(box);
+            for (String[] it : Catalog.itemsOf(r)) l.addView(catalogCard(it), cardLp());
+        }
+        applyOrder();
+        updateHero();
+    }
+
+    /** El bloque de una sección; si no existe se crea al final (applyOrder lo pone en su sitio). */
+    private LinearLayout section(String id) {
+        LinearLayout box = sections.get(id);
+        if (box == null) {
+            box = new LinearLayout(this);
+            box.setOrientation(LinearLayout.VERTICAL);
+            sections.put(id, box);
+            root.addView(box);
+        }
+        return box;
+    }
+
+    /** Pone las secciones en el orden elegido en Ajustes, debajo del banner y la barra. */
+    private void applyOrder() {
+        List<String> order = settings.sectionOrder(new ArrayList<>(sections.keySet()));
+        for (String id : order) {
+            LinearLayout box = sections.get(id);
+            root.removeView(box);
+            root.addView(box);
+        }
     }
 }

@@ -57,7 +57,7 @@ final class Hero extends FrameLayout {
     private final ImageView img, appArt;
     private final TextView label, title, play;
     private final LinearLayout dots;
-    private List<String[]> items = new ArrayList<>(); // {id, título, etiqueta}
+    private List<String[]> items = new ArrayList<>(); // {id, título, etiqueta[, imagen]}
     private int idx;
 
     private final Runnable rotate = new Runnable() {
@@ -196,6 +196,8 @@ final class Hero extends FrameLayout {
             lp.rightMargin = dp(6);
             dots.addView(dot, lp);
         }
+        label.setVisibility(VISIBLE);
+        title.setVisibility(VISIBLE);
         if (it[0].startsWith(APP)) {
             showApp(it[0].substring(APP.length()));
             return;
@@ -205,12 +207,16 @@ final class Hero extends FrameLayout {
         blur(false);
         Bitmap bm = thumbs.get(it[0]);
         if (bm != null) crossfade(bm);
-        else fetch(it[0]);
+        else if (it.length > 3) fetch(it[0], it[3]); // título de Netflix, Prime… con su imagen de TMDB
+        else fetch(it[0], "https://i.ytimg.com/vi/" + it[0] + "/maxresdefault.jpg", "https://i.ytimg.com/vi/" + it[0] + "/hqdefault.jpg");
     }
 
     /** Diapositiva de app: su banner de Android TV nítido a la derecha y desenfocado de fondo. */
     private void showApp(String pkg) {
         play.setText("Abrir");
+        // de las apps, solo su logo
+        label.setVisibility(GONE);
+        title.setVisibility(GONE);
         PackageManager pm = getContext().getPackageManager();
         Drawable banner = null;
         try {
@@ -243,11 +249,11 @@ final class Hero extends FrameLayout {
         }).start();
     }
 
-    /** Miniatura grande (maxres); si el video no la tiene, la de alta calidad. */
-    private void fetch(final String id) {
+    /** La primera imagen que baje (en YouTube, maxres y si el video no la tiene, la de alta calidad). */
+    private void fetch(final String id, final String... urls) {
         new Thread(() -> {
-            Bitmap bm = download("https://i.ytimg.com/vi/" + id + "/maxresdefault.jpg");
-            if (bm == null) bm = download("https://i.ytimg.com/vi/" + id + "/hqdefault.jpg");
+            Bitmap bm = null;
+            for (int i = 0; bm == null && i < urls.length; i++) bm = download(urls[i]);
             if (bm == null) return;
             final Bitmap got = bm;
             main.post(() -> {
