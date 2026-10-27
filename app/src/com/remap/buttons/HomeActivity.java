@@ -143,6 +143,10 @@ public class HomeActivity extends Activity {
         }
         refreshApps();
         refreshRecent();
+        if (!focusedOnce) {
+            root.post(this::focusFirstSection); // tras el primer dibujo: si no, el banner se queda con el foco
+            focusedOnce = true;
+        }
         loadReco();
         loadCatalog();
         if (settings.showBar()) nowPlaying.start();
@@ -422,8 +426,30 @@ public class HomeActivity extends Activity {
         }
         // si habia una app enfocada (p. ej. tras desinstalar), deja el foco cerca; al abrir, en la primera app
         if (focused >= 0 && apps.size() > 0) appsRow.getChildAt(Math.min(focused, apps.size() - 1)).requestFocus();
-        else if (!focusedOnce && apps.size() > 0) appsRow.getChildAt(0).requestFocus();
-        focusedOnce = true;
+    }
+
+    /** Al abrir, el cursor va a la primera fila del orden elegido en Ajustes que tenga algo. */
+    private void focusFirstSection() {
+        for (String id : settings.sectionOrder(new ArrayList<>(sections.keySet()))) {
+            LinearLayout box = sections.get(id);
+            if (box.getVisibility() != View.VISIBLE) continue;
+            View f = firstFocusable(box);
+            if (f != null && f.requestFocus()) return;
+        }
+    }
+
+    private static View firstFocusable(View v) {
+        if (v.getVisibility() != View.VISIBLE) return null;
+        // las filas que se desplazan también son enfocables: se busca la primera tarjeta dentro
+        if (v.isFocusable() && !(v instanceof HorizontalScrollView) && !(v instanceof ScrollView)) return v;
+        if (v instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) v;
+            for (int i = 0; i < g.getChildCount(); i++) {
+                View f = firstFocusable(g.getChildAt(i));
+                if (f != null) return f;
+            }
+        }
+        return null;
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent e) {
@@ -431,6 +457,7 @@ public class HomeActivity extends Activity {
     }
 
     private void refreshRecent() {
+        int focused = recentRow.indexOfChild(recentRow.getFocusedChild()); // para no perder el cursor al redibujar
         recentRow.removeAllViews();
         List<String[]> h = Videos.history(this);
         List<String[]> apps = settings.learnApps() ? Catalog.seen(this) : new ArrayList<>();
@@ -442,9 +469,10 @@ public class HomeActivity extends Activity {
         while (a < apps.size() || y < h.size()) {
             long ta = a < apps.size() && apps.get(a).length > 4 ? Long.parseLong(apps.get(a)[4]) : (a < apps.size() ? 0 : -1);
             long ty = y < h.size() ? Videos.seenAt(this, h.get(y)[0]) : -1;
-            if (a < apps.size() && (y >= h.size() || ta >= ty)) recentRow.addView(catalogCard(apps.get(a++)), cardLp());
-            else recentRow.addView(videoCard(h.get(y)[0], h.get(y++)[1]), cardLp());
+            if (a < apps.size() && (y >= h.size() || ta >= ty)) recentRow.addView(catalogCard(apps.get(a++), true), cardLp());
+            else recentRow.addView(videoCard(h.get(y)[0], h.get(y++)[1], true), cardLp());
         }
+        if (focused >= 0 && recentRow.getChildCount() > 0) recentRow.getChildAt(Math.min(focused, recentRow.getChildCount() - 1)).requestFocus();
         updateHero();
     }
 
@@ -454,16 +482,25 @@ public class HomeActivity extends Activity {
         return lp;
     }
 
-    private View videoCard(final String id, final String name) {
-        return card(name, "https://i.ytimg.com/vi/" + id + "/mqdefault.jpg", null, Videos.position(this, id), v -> openVideo(id, name));
+    private View videoCard(final String id, final String name) { return videoCard(id, name, false); }
+
+    /** removable: en "Seguir mirando", OK largo ofrece quitarlo. */
+    private View videoCard(final String id, final String name, boolean removable) {
+        return card(name, "https://i.ytimg.com/vi/" + id + "/mqdefault.jpg", null, Videos.position(this, id), v -> openVideo(id, name),
+                removable ? () -> Videos.forget(this, id) : null);
     }
+
+    private View catalogCard(final String[] it) { return catalogCard(it, false); }
 
     /** Título de otra app: su imagen (o el banner de la app si no hay) con el ícono de la app en la esquina. */
-    private View catalogCard(final String[] it) {
-        return card(it[1], it[2].isEmpty() ? null : it[2], it[3], null, v -> Catalog.open(this, it[0], it[1]));
+    private View catalogCard(final String[] it, boolean seen) {
+        String ep = seen ? Catalog.episode(this, it[0]) : null;
+        return card(it[1] + (ep != null ? "  ·  " + ep : ""), it[2].isEmpty() ? null : it[2], it[3],
+                seen ? Catalog.progress(this, it[0]) : null, v -> Catalog.open(this, it[0], it[1]),
+                seen ? () -> Catalog.forget(this, it[0]) : null);
     }
 
-    private View card(String name, String image, String appPkg, long[] p, View.OnClickListener click) {
+    private View card(final String name, String image, String appPkg, long[] p, View.OnClickListener click, final Runnable remove) {
         LinearLayout c = new LinearLayout(this);
         c.setOrientation(LinearLayout.VERTICAL);
         c.setFocusable(true);
@@ -512,6 +549,19 @@ public class HomeActivity extends Activity {
         t.setPadding(dp(6), dp(6), dp(6), dp(4));
         c.addView(t);
         c.setOnClickListener(click);
+        if (remove != null) c.setOnLongClickListener(v -> {
+            new android.app.AlertDialog.Builder(this, theme.light ? android.R.style.Theme_DeviceDefault_Light_Dialog_Alert
+                    : android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                    .setTitle("¿Quitar de Seguir mirando?")
+                    .setMessage(name)
+                    .setPositiveButton("Quitar", (d, w) -> {
+                        remove.run();
+                        refreshRecent();
+                    })
+                    .setNegativeButton("Cancelar", null)
+                    .show();
+            return true;
+        });
         glass(c, iv);
         if (image != null) fetchThumb(image, iv);
         return c;
@@ -617,10 +667,15 @@ public class HomeActivity extends Activity {
     /** Pone las secciones en el orden elegido en Ajustes, debajo del banner y la barra. */
     private void applyOrder() {
         List<String> order = settings.sectionOrder(new ArrayList<>(sections.keySet()));
+        // solo se mueve lo que no está en su sitio: sacar una fila de la pantalla le quita el foco
+        int pos = root.getChildCount() - order.size();
         for (String id : order) {
             LinearLayout box = sections.get(id);
-            root.removeView(box);
-            root.addView(box);
+            if (root.getChildAt(pos) != box) {
+                root.removeView(box);
+                root.addView(box, pos);
+            }
+            pos++;
         }
     }
 }

@@ -30,13 +30,23 @@ final class ScreenTitles {
     private final List<String> recent = new ArrayList<>(); // textos de las últimas pantallas de la app de adelante
     private String recentPkg = "";
     private boolean playing;
+    // por dónde va lo que suena: lo que marcaba el reproductor al anotarlo, más el tiempo que siguió sonando
+    private String curKey;
+    private long basePos, duration, playedMs, playSince;
 
     private final AudioManager.AudioPlaybackCallback audio = new AudioManager.AudioPlaybackCallback() {
         @Override public void onPlaybackConfigChanged(List<AudioPlaybackConfiguration> configs) {
+            boolean was = playing;
             playing = false;
             for (AudioPlaybackConfiguration c : configs) {
                 if (c.getAudioAttributes().getUsage() == AudioAttributes.USAGE_MEDIA) playing = true;
             }
+            long now = System.currentTimeMillis();
+            if (was && !playing && curKey != null) {
+                playedMs += now - playSince;
+                saveProgress();
+            }
+            if (!was && playing) playSince = now;
             if (playing) main.postDelayed(ScreenTitles.this::capture, 1500);
         }
     };
@@ -73,8 +83,48 @@ final class ScreenTitles {
         final String pkg = addTexts();
         if (pkg == null || !playing) return;
         final List<String> texts = new ArrayList<>(recent);
+        final long[] times = playerTimes(); // {posición, duración} del reproductor, si se ven
         Log.d(TAG, pkg + " suena; textos: " + texts);
-        new Thread(() -> Catalog.rememberIfKnown(svc, pkg, texts)).start();
+        new Thread(() -> {
+            final String key = Catalog.rememberIfKnown(svc, pkg, texts);
+            main.post(() -> {
+                curKey = key;
+                if (key == null || times == null) { curKey = null; return; }
+                basePos = times[0];
+                duration = times[1];
+                playedMs = 0;
+                playSince = System.currentTimeMillis();
+                saveProgress();
+            });
+        }).start();
+    }
+
+    private void saveProgress() {
+        long pos = basePos + playedMs + (playing ? System.currentTimeMillis() - playSince : 0);
+        Catalog.saveProgress(svc, curKey, Math.min(pos, duration), duration);
+    }
+
+    /** Los tiempos que muestra el reproductor ("00:03" … "28:28"): el primero es la posición y el mayor la duración. */
+    private long[] playerTimes() {
+        AccessibilityNodeInfo root = svc.getRootInActiveWindow();
+        if (root == null) return null;
+        List<Long> t = new ArrayList<>();
+        times(root, t, 0);
+        if (t.size() < 2) return null;
+        long max = 0;
+        for (long x : t) max = Math.max(max, x);
+        return t.get(0) < max ? new long[]{t.get(0), max} : null;
+    }
+
+    private static void times(AccessibilityNodeInfo n, List<Long> out, int depth) {
+        if (n == null || depth > 40) return;
+        CharSequence cs = n.getText();
+        if (cs != null && cs.toString().trim().matches("\\d{1,2}:\\d{2}(:\\d{2})?")) {
+            long ms = 0;
+            for (String part : cs.toString().trim().split(":")) ms = ms * 60 + Long.parseLong(part);
+            out.add(ms * 1000);
+        }
+        for (int i = 0; i < n.getChildCount(); i++) times(n.getChild(i), out, depth + 1);
     }
 
     private boolean watches(String pkg) {

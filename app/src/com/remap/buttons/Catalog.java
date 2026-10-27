@@ -93,17 +93,54 @@ final class Catalog {
     }
 
     /** Como remember, pero solo si algún texto es una película o serie que TMDB reconoce (textos leídos de la pantalla). */
-    static void rememberIfKnown(Context c, String pkg, List<String> texts) {
+    static String rememberIfKnown(Context c, String pkg, List<String> texts) {
         for (String t : texts) {
             String[] m = null;
             try { m = match(c, t); } catch (Exception ignored) { }
             if (m == null) continue;
             List<String> one = new ArrayList<>();
             one.add(m[1]);
+            String key = remember(c, pkg, one);
             // el nombre tal como lo muestra la app, para buscarlo ahí al volver (AppSearch)
-            sp(c).edit().putString("enApp_" + remember(c, pkg, one), t).putBoolean("pantalla_" + pkg, true).apply();
-            return;
+            SharedPreferences.Editor ed = sp(c).edit().putString("enApp_" + key, t).putBoolean("pantalla_" + pkg, true);
+            // en series el reproductor dice "Betty T2 1": temporada y capítulo
+            for (String s : texts) {
+                java.util.regex.Matcher e = java.util.regex.Pattern.compile("(?i)\\s*T(\\d+)\\s*(?:E|EP|x)?\\s*(\\d+)\\s*")
+                        .matcher(s.startsWith(t) ? s.substring(t.length()) : "");
+                if (e.matches()) {
+                    ed.putString("ep_" + key, "T" + e.group(1) + " E" + e.group(2));
+                    break;
+                }
+            }
+            ed.apply();
+            return key;
         }
+        return null;
+    }
+
+    /** Por dónde va (ms) y cuánto dura lo que se vio en una app que no lo informa (lo calcula ScreenTitles). */
+    static void saveProgress(Context c, String key, long pos, long dur) {
+        sp(c).edit().putString("prog_" + key, pos + "," + dur).apply();
+    }
+
+    static long[] progress(Context c, String key) {
+        String v = sp(c).getString("prog_" + key, null);
+        if (v == null) return null;
+        String[] p = v.split(",");
+        try { return new long[]{Long.parseLong(p[0]), Long.parseLong(p[1])}; } catch (Exception e) { return null; }
+    }
+
+    /** "T2 E6" si es una serie y se supo el capítulo, o null. */
+    static String episode(Context c, String key) { return sp(c).getString("ep_" + key, null); }
+
+    /** Quita algo de "Seguir mirando". */
+    static void forget(Context c, String key) {
+        synchronized (Catalog.class) {
+            List<String[]> list = seen(c);
+            for (int i = list.size() - 1; i >= 0; i--) if (list.get(i)[0].equals(key)) list.remove(i);
+            sp(c).edit().putString("visto", joinItems(list)).remove("prog_" + key).remove("ep_" + key).apply();
+        }
+        new Prefs(c).backup();
     }
 
     static void clear(Context c) {

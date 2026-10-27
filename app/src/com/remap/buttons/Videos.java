@@ -52,6 +52,14 @@ final class Videos {
         return pm.getLeanbackLaunchIntentForPackage(pkg) != null || pm.getLaunchIntentForPackage(pkg) != null;
     }
 
+    /** Quita un video de "Seguir mirando". */
+    static void forget(Context c, String id) {
+        List<String[]> h = history(c);
+        for (int i = h.size() - 1; i >= 0; i--) if (h.get(i)[0].equals(id)) h.remove(i);
+        sp(c).edit().putString("h", join(h, MAX_HISTORY)).apply();
+        new Prefs(c).backup();
+    }
+
     static void remember(Context c, String id, String name) {
         List<String[]> h = history(c);
         for (int i = h.size() - 1; i >= 0; i--) if (h.get(i)[0].equals(id)) h.remove(i);
