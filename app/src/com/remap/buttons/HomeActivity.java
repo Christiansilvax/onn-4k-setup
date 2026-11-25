@@ -477,6 +477,10 @@ public class HomeActivity extends Activity {
      * "Seguir mirando": una fila para YouTube y otra por cada app (Xuper, Netflix…), así los videos de YouTube no
      * empujan fuera lo que ibas viendo en las otras. Cada fila va de lo más reciente a lo más viejo.
      */
+    private boolean installed(String pkg) {
+        try { getPackageManager().getPackageInfo(pkg, 0); return true; } catch (Exception e) { return false; }
+    }
+
     private void refreshRecent() {
         List<String[]> h = Videos.history(this);
         recentTitle.setVisibility(h.isEmpty() ? View.GONE : View.VISIBLE);
@@ -487,7 +491,9 @@ public class HomeActivity extends Activity {
         if (focused >= 0 && recentRow.getChildCount() > 0) recentRow.getChildAt(Math.min(focused, recentRow.getChildCount() - 1)).requestFocus();
 
         java.util.Map<String, List<String[]>> byApp = new java.util.LinkedHashMap<>();
-        if (settings.learnApps()) for (String[] it : Catalog.seen(this)) byApp.computeIfAbsent(it[3], k -> new ArrayList<>()).add(it);
+        if (settings.learnApps()) for (String[] it : Catalog.seen(this)) {
+            if (installed(it[3])) byApp.computeIfAbsent(it[3], k -> new ArrayList<>()).add(it); // apps ya desinstaladas no dejan fila
+        }
         boolean changed = false;
         for (String id : new ArrayList<>(sections.keySet())) { // apps de las que ya no queda nada
             if (id.startsWith("seguir:") && !byApp.containsKey(id.substring(7))) {
@@ -619,6 +625,7 @@ public class HomeActivity extends Activity {
         Intent i = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url));
         i.setPackage(app);
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        Memory.freeFor(this, app);
         try { startActivity(i); } catch (Exception ignored) { }
     }
 

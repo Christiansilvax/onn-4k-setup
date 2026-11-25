@@ -62,7 +62,12 @@ final class Catalog {
     }
 
     /** {clave, nombre, imagen, paquete}, lo último primero. */
-    static List<String[]> seen(Context c) { return parseItems(sp(c).getString("visto", "[]")); }
+    static List<String[]> seen(Context c) {
+        List<String[]> all = parseItems(sp(c).getString("visto", "[]"));
+        // botones de las apps ("Próximo", "Películas") anotados por error en versiones anteriores: no se muestran
+        for (int i = all.size() - 1; i >= 0; i--) if (LABELS.contains(norm(all.get(i)[1]))) all.remove(i);
+        return all;
+    }
 
     /**
      * Anota lo que suena en una app. Hace red (busca el título en TMDB para la imagen y el nombre bueno):
@@ -357,10 +362,18 @@ final class Catalog {
         return new String[]{PREFIX + "r:" + pkg + ":" + type + ":" + o.optInt("id"), name, IMG + o.optString("backdrop_path"), pkg};
     }
 
+    /** Textos de menús y botones de las apps de video: nunca son el título de lo que se mira. */
+    private static final java.util.Set<String> LABELS = new java.util.HashSet<>(java.util.Arrays.asList(
+            "proximo", "siguiente", "anterior", "peliculas", "series", "inicio", "buscar", "configuracion", "ajustes",
+            "favoritos", "continuar", "reproducir", "episodios", "temporadas", "novedades", "estrenos", "populares",
+            "categorias", "generos", "cerrar", "volver", "menu", "next", "previous", "movies", "search", "settings",
+            "home", "play", "resume", "episodes", "seasons", "trailer", "tendencias", "recientes", "recomendados",
+            "infantil", "anime", "documentales", "canales", "envivo", "premium", "perfil", "salir"));
+
     /** {tipo:id, nombre, imagen} si el texto es el nombre de una película o serie (o empieza por él), o null. */
     static String[] match(Context c, String text) throws Exception {
         String q = norm(text);
-        if (q.length() < 4) return null; // "TV", "HD"… son etiquetas de la app, no títulos
+        if (q.length() < 4 || LABELS.contains(q)) return null; // "TV", "HD", "Próximo"… son etiquetas de la app, no títulos
         // TMDB no encuentra nada si van guiones largos o dos puntos ("Misión: Imposible – Sentencia mortal")
         String clean = text.replaceAll("[\\u2010-\\u2015:|\\-]+", " ").replaceAll("\\s+", " ").trim();
         JSONArray res = api(c, "/search/multi?query=" + URLEncoder.encode(clean, "UTF-8") + "&language=" + lang(country(c, null))).getJSONArray("results");
@@ -377,7 +390,11 @@ final class Catalog {
                 // "Stranger Things: Capítulo 1" también es Stranger Things
                 if ((q.equals(n) || (q.startsWith(n) && n.length() >= 4))) {
                     String bd = o.optString("backdrop_path");
-                    return new String[]{type + ":" + o.getInt("id"), name, bd.isEmpty() ? "" : IMG + bd};
+                    if (bd.isEmpty() || bd.equals("null")) bd = o.optString("poster_path");
+                    // sin imagen la tarjeta de "Seguir mirando" queda en blanco: casi siempre es un botón de la app
+                    // ("Próximo", "Películas") que coincide con alguna película rara de TMDB
+                    if (bd.isEmpty() || bd.equals("null")) continue;
+                    return new String[]{type + ":" + o.getInt("id"), name, IMG + bd};
                 }
             }
         }
@@ -486,6 +503,7 @@ final class Catalog {
         String[] p = key.split(":");
         if (p.length < 3) return;
         String pkg = p[2];
+        Memory.freeFor(c, pkg);
         Intent search = new Intent(Intent.ACTION_SEARCH).setPackage(pkg).putExtra(SearchManager.QUERY, name)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         boolean searchable = search.resolveActivity(c.getPackageManager()) != null;

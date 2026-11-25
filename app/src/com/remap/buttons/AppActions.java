@@ -39,7 +39,10 @@ final class AppActions {
         PackageManager pm = a.getPackageManager();
         Intent i = pm.getLeanbackLaunchIntentForPackage(pkg);
         if (i == null) i = pm.getLaunchIntentForPackage(pkg);
-        if (i != null) a.startActivity(i);
+        if (i != null) {
+            Memory.freeFor(a, pkg);
+            a.startActivity(i);
+        }
     }
 
     /** Paquetes en el orden mostrado, para saber si hay que redibujar. */

@@ -108,6 +108,8 @@ public class KeyService extends AccessibilityService {
             Intent i = prefs.resolve(k);
             if (i != null) {
                 i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                String target = i.getPackage() != null ? i.getPackage() : i.getComponent() != null ? i.getComponent().getPackageName() : null;
+                if (target != null) Memory.freeFor(this, target);
                 startActivity(i);
             } else {
                 Toast.makeText(this, "No encuentro la app de este botón. Abre «Botones del control» y elige otra.", Toast.LENGTH_LONG).show();
