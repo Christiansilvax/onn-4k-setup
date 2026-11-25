@@ -2,6 +2,7 @@
 # Uso:  powershell -ExecutionPolicy Bypass -File instalar.ps1 -Ip 192.168.1.3 [-SinYoutube] [-SinNetflix]
 #       powershell -ExecutionPolicy Bypass -File instalar.ps1 -Ip 192.168.1.3 -Restaurar
 #       powershell -ExecutionPolicy Bypass -File instalar.ps1 -Ip 192.168.1.3 -GuardarConfig
+#       powershell -ExecutionPolicy Bypass -File instalar.ps1 -Ip 192.168.1.3 -SoloOptimizar   (caja ya instalada: solo ahorro de RAM y 720p)
 # La configuracion (botones, orden de apps y ajustes del launcher) sale de config/botones.json y se copia a la
 # caja si esta no tiene la suya; -GuardarConfig la saca de una caja ya configurada para replicarla en otras.
 param(
@@ -10,6 +11,9 @@ param(
     [switch]$SinNetflix,   # quita Netflix del sistema
     [switch]$Restaurar,    # devuelve todo lo que este script quito
     [switch]$GuardarConfig, # copia la configuracion de la caja a config/botones.json (sin historial)
+    [switch]$SoloOptimizar, # no instala nada: solo aplica (o con -Restaurar, revierte) el ahorro de RAM
+    [switch]$SinOptimizar,  # instala sin el ahorro de RAM
+    [switch]$Sin720,        # el ahorro de RAM no baja la interfaz a 720p (queda en 1080p, mas nitido pero mas pesado)
     [string]$ZonaHoraria = "America/Bogota" # la caja no tiene red movil: con zona automatica queda en Nueva York (una hora mas)
 )
 
@@ -27,6 +31,40 @@ if (-not (Test-Path $adb)) { $adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tool
 if (-not (Test-Path $adb)) { Write-Host "No encuentro adb. Descarga platform-tools de Google y descomprimelo junto a este script (carpeta platform-tools)."; exit 1 }
 function A { & $adb -s "${Ip}:5555" @args }
 
+# --- ahorro de RAM (la caja tiene 2 GB) ---
+# Apps de terceros: sin segundo plano ni arranque automatico. Se descartan el launcher y lo que el sistema necesita.
+function Optimizar {
+    $terceros = (A shell pm list packages -3) -replace 'package:', '' | ForEach-Object { $_.Trim() } | Where-Object { $_ -and $_ -ne "com.remap.buttons" }
+    foreach ($p in $terceros) {
+        A shell "am force-stop $p; cmd appops set $p RUN_IN_BACKGROUND deny; cmd appops set $p RUN_ANY_IN_BACKGROUND deny; cmd appops set $p BOOT_COMPLETED deny; am set-standby-bucket $p restricted" 2>&1 | Out-Null
+    }
+    Write-Host ("Sin segundo plano: " + ($terceros -join ", "))
+    # protector basico, asistente de voz (boton del microfono), voz de TalkBack e interruptor del microfono
+    foreach ($p in "com.android.dreams.basic","com.google.android.katniss","com.google.android.tts","com.droidlogic.mictoggle") {
+        if ((A shell pm list packages $p) -match [regex]::Escape($p)) { "desactivando $p -> " + (A shell pm disable-user --user 0 $p) }
+    }
+    A shell settings put global activity_manager_constants "max_cached_processes=4,max_phantom_processes=16" | Out-Null
+    A shell device_config put activity_manager max_cached_processes 4 | Out-Null
+    A shell device_config put activity_manager_native_boot use_freezer true | Out-Null
+    if (-not $Sin720) {   # la GPU de la caja no aguanta 1080p con fluidez: se dibuja a 720p y la TV escala
+        A shell wm size 1280x720 | Out-Null
+        A shell wm density 213 | Out-Null
+    }
+    A shell cmd activity kill-all | Out-Null
+    Write-Host ("Ahorro de RAM aplicado. " + (A shell "grep MemAvailable /proc/meminfo"))
+}
+function Revertir {
+    $terceros = (A shell pm list packages -3) -replace 'package:', '' | ForEach-Object { $_.Trim() } | Where-Object { $_ -and $_ -ne "com.remap.buttons" }
+    foreach ($p in $terceros) {
+        A shell "cmd appops set $p RUN_IN_BACKGROUND default; cmd appops set $p RUN_ANY_IN_BACKGROUND default; cmd appops set $p BOOT_COMPLETED default; am set-standby-bucket $p active" 2>&1 | Out-Null
+    }
+    foreach ($p in "com.android.dreams.basic","com.google.android.katniss","com.google.android.tts","com.droidlogic.mictoggle") { A shell pm enable $p | Out-Null }
+    A shell settings delete global activity_manager_constants | Out-Null
+    A shell device_config delete activity_manager max_cached_processes | Out-Null
+    A shell wm size reset | Out-Null
+    A shell wm density reset | Out-Null
+}
+
 # --- paquetes ---
 $rastreo = "com.android.adservices.api","com.android.ondevicepersonalization.services","com.android.federatedcompute.services",
   "com.google.android.partnersetup","com.google.android.syncadapters.calendar","com.android.providers.calendar",
@@ -43,6 +81,11 @@ $modelo = (A shell getprop ro.product.model).Trim()
 if (-not $modelo) { Write-Host "No hay conexion. Revisa la IP y que la depuracion ADB este activada (mira la guia)."; exit 1 }
 Write-Host "Dispositivo: $modelo"
 if ($modelo -notmatch "onn") { Write-Host "OJO: no parece un onn. Seguir puede no ser seguro."; if ((Read-Host "Escribe SI para continuar") -ne "SI") { exit 1 } }
+
+if ($SoloOptimizar) {
+    if ($Restaurar) { Revertir; Write-Host "Ahorro de RAM revertido." } else { Optimizar }
+    exit 0
+}
 
 if ($GuardarConfig) {
     $tmp = Join-Path $env:TEMP "botones-caja.json"
@@ -66,6 +109,7 @@ if ($Restaurar) {
     A shell settings put global encoded_surround_output 0 | Out-Null
     A shell settings put global wifi_scan_always_enabled 1 | Out-Null
     A shell settings delete secure screensaver_components | Out-Null
+    Revertir
     A uninstall com.remap.buttons | Out-Host
     Write-Host "Restaurado. Reinicia el TV box."
     exit 0
@@ -124,6 +168,9 @@ A shell service call alarm 3 s16 $ZonaHoraria | Out-Null   # setTimeZone; la hor
 
 # --- 5. launcher predeterminado (NO se desactiva el de Google TV) ---
 A shell cmd package set-home-activity com.remap.buttons/.HomeActivity | Out-Host
+
+# --- 6. ahorro de RAM (opcional) ---
+if (-not $SinOptimizar) { Optimizar }
 
 Write-Host ""
 Write-Host "Listo. Reinicia el TV box: arranca directo en el launcher."

@@ -55,6 +55,10 @@ powershell -ExecutionPolicy Bypass -File instalar.ps1 -Ip 192.168.1.3 -SinYoutub
 - `-SinYoutube` quita YouTube y YouTube Music del sistema (úsalo si vas a ver YouTube en TizenTube).
 - `-SinNetflix` quita Netflix. Quítalo del comando si el amigo sí usa Netflix.
 - Quita **solo** lo que existe en ese equipo; lo que no esté, lo ignora.
+- `-SinOptimizar` no aplica el ahorro de RAM (paso 6). `-Sin720` lo aplica pero deja la interfaz en 1080p.
+- `-SoloOptimizar` aplica **solo** el ahorro de RAM en una caja que ya estaba instalada (no toca nada más); con `-Restaurar` lo revierte.
+
+**Ahorro de RAM (paso 6, la caja tiene 2 GB):** a las apps de terceros les quita el segundo plano y el arranque automático; desactiva el protector de pantalla, el asistente de voz (el botón del micrófono deja de funcionar), la voz de TalkBack y el interruptor del micrófono; limita los procesos en caché a 4 y congela los inactivos; y dibuja la interfaz a 1280×720 (densidad 213), porque la GPU no aguanta 1080p con fluidez (la TV escala la imagen). Además el launcher cierra en segundo plano las otras apps al abrir una. Es reversible con `-SoloOptimizar -Restaurar`.
 
 El script hace, en orden:
 1. Quita bloat y rastreo (reversible): anuncios de Android 14, personalización en el dispositivo, aprendizaje federado, Health Connect, calendarios, Nearby, impresión, feedback, TalkBack, juegos de Google.
