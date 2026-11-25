@@ -14,7 +14,7 @@ import java.util.regex.Pattern;
 
 /**
  * Lee lo que reproducen TizenTube y la app oficial de YouTube: lo guarda en "Seguir mirando" (con la app donde se vio)
- * y anota por dónde va para continuar ahí.
+ * y anota por dónde va para continuar ahí. De las demás apps de video (Netflix, Prime, Claro…) anota el título (Catalog).
  */
 public class MediaWatcher extends NotificationListenerService {
     private MediaSessionManager msm;
@@ -43,10 +43,11 @@ public class MediaWatcher extends NotificationListenerService {
     private void attach(List<MediaController> list) {
         if (watched != null) { savePosition(); watched.unregisterCallback(cb); watched = null; }
         if (list == null) return;
-        // la que esté sonando primero; si ninguna suena, la primera de YouTube que haya
+        // la que esté sonando primero; si ninguna suena, la primera de video que haya
         MediaController pick = null;
+        boolean learn = new LauncherSettings(this).learnApps();
         for (MediaController c : list) {
-            if (!java.util.Arrays.asList(Videos.PLAYERS).contains(c.getPackageName())) continue;
+            if (!isYouTube(c.getPackageName()) && !(learn && Catalog.learnsFrom(this, c.getPackageName()))) continue;
             PlaybackState st = c.getPlaybackState();
             if (st != null && st.getState() == PlaybackState.STATE_PLAYING) { pick = c; break; }
             if (pick == null) pick = c;
@@ -79,6 +80,10 @@ public class MediaWatcher extends NotificationListenerService {
         lastId = null;
         lastState = st;
         lastMeta = md;
+        if (!isYouTube(lastApp)) {
+            learn(lastApp, md);
+            return;
+        }
         String mediaId = md.getString(MediaMetadata.METADATA_KEY_MEDIA_ID);
         if (mediaId != null && mediaId.matches("[\\w-]{11}")) {
             lastId = mediaId;
@@ -97,6 +102,20 @@ public class MediaWatcher extends NotificationListenerService {
                 }
             } catch (Exception ignored) { }
         }).start();
+    }
+
+    private static boolean isYouTube(String pkg) { return java.util.Arrays.asList(Videos.PLAYERS).contains(pkg); }
+
+    /** Netflix, Prime… publican el nombre en distintos campos (serie en el álbum, capítulo en el título…): se prueban todos. */
+    private void learn(final String app, MediaMetadata md) {
+        final List<String> texts = new java.util.ArrayList<>();
+        for (String k : new String[]{MediaMetadata.METADATA_KEY_TITLE, MediaMetadata.METADATA_KEY_DISPLAY_TITLE,
+                MediaMetadata.METADATA_KEY_ALBUM, MediaMetadata.METADATA_KEY_ARTIST, MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE}) {
+            String t = md.getString(k);
+            if (t != null && !t.trim().isEmpty() && !texts.contains(t.trim())) texts.add(t.trim());
+        }
+        if (texts.isEmpty()) return;
+        new Thread(() -> Catalog.remember(this, app, texts)).start();
     }
 
     /** Guarda por dónde va el video actual (estimado al momento si sigue sonando). */

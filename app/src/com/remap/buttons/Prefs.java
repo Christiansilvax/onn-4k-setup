@@ -107,6 +107,7 @@ final class Prefs {
                 JSONObject root = new JSONObject().put("version", 2).put("botones", keys).put("orden", order)
                         .put("historial", toJson(Videos.parse(v.getString("h", "")))).put("canales", channels)
                         .put("recomendaciones", toJson(Videos.parse(v.getString("reco", ""))))
+                        .put("vistoApps", new JSONArray(Catalog.sp(ctx).getString("visto", "[]")))
                         .put("ajustes", settings);
                 File f = backupFile();
                 f.getParentFile().mkdirs();
@@ -176,6 +177,8 @@ final class Prefs {
                         .putString("h", Videos.join(fromJson(root.optJSONArray("historial")), 100))
                         .putString("ch", sb.toString())
                         .putString("reco", Videos.join(fromJson(root.optJSONArray("recomendaciones")), 100)).apply();
+                JSONArray seen = root.optJSONArray("vistoApps");
+                if (seen != null) Catalog.sp(ctx).edit().putString("visto", seen.toString()).apply();
             }
             JSONObject settings = root.optJSONObject("ajustes");
             if (noSettings && settings != null) {

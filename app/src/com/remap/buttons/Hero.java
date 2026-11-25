@@ -36,7 +36,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Banner grande del inicio: rota entre lo último que viste, recomendaciones y tus apps de streaming.
+ * Banner grande del inicio: lo último que viste, recomendaciones y tus apps de streaming (no rota solo: gasta GPU).
  * OK reproduce el video o abre la app; ← → cambian.
  */
 final class Hero extends FrameLayout {
@@ -48,8 +48,6 @@ final class Hero extends FrameLayout {
     /** Prefijo del id para las diapositivas de apps ({APP + paquete, nombre, etiqueta}). */
     static final String APP = "app:";
 
-    private static final long ROTATE_MS = 9000;
-
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Map<String, Bitmap> thumbs = new HashMap<>();
     private final Opener opener;
@@ -57,15 +55,9 @@ final class Hero extends FrameLayout {
     private final ImageView img, appArt;
     private final TextView label, title, play;
     private final LinearLayout dots;
-    private List<String[]> items = new ArrayList<>(); // {id, título, etiqueta}
+    private List<String[]> items = new ArrayList<>(); // {id, título, etiqueta[, imagen]}
     private int idx;
 
-    private final Runnable rotate = new Runnable() {
-        @Override public void run() {
-            if (!hasFocus() && items.size() > 1) show((idx + 1) % items.size());
-            main.postDelayed(this, ROTATE_MS);
-        }
-    };
 
     Hero(Context c, Theme theme, Opener o) {
         super(c);
@@ -99,11 +91,12 @@ final class Hero extends FrameLayout {
         // velo de izquierda a derecha y de abajo hacia arriba para que el texto se lea sobre cualquier imagen
         View side = new View(c);
         side.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{Theme.alpha(theme.veil, 0xF2), Theme.alpha(theme.veil, 0xA6), Theme.alpha(theme.veil, 0)}));
+                theme.light ? new int[]{Theme.alpha(theme.veil, 0xF2), Theme.alpha(theme.veil, 0x99), Theme.alpha(theme.veil, 0)}
+                        : new int[]{Theme.alpha(theme.veil, 0xF2), Theme.alpha(theme.veil, 0xA6), Theme.alpha(theme.veil, 0)}));
         addView(side, new LayoutParams(-1, -1));
         View bottom = new View(c);
         bottom.setBackground(new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
-                new int[]{Theme.alpha(theme.veil, 0xCC), Theme.alpha(theme.veil, 0)}));
+                new int[]{Theme.alpha(theme.veil, theme.light ? 0xB3 : 0xCC), Theme.alpha(theme.veil, 0)}));
         addView(bottom, new LayoutParams(-1, dp(120), Gravity.BOTTOM));
         addView(appArt, alp);
 
@@ -139,7 +132,7 @@ final class Hero extends FrameLayout {
                 new int[][]{{android.R.attr.state_focused}, {}}, new int[]{theme.veil, theme.text}));
         StateListDrawable pb = new StateListDrawable();
         pb.addState(new int[]{android.R.attr.state_focused}, round(theme.text, 999, 0)); // botón invertido al enfocar
-        pb.addState(new int[]{}, round(theme.chip, 999, 0));
+        pb.addState(new int[]{}, round(theme.light ? theme.glass : theme.chip, 999, 0)); // de día, píldora de cristal
         play.setBackground(pb);
         actions.addView(play);
         dots = new LinearLayout(c);
@@ -171,8 +164,6 @@ final class Hero extends FrameLayout {
         show(keep);
     }
 
-    void start() { main.removeCallbacks(rotate); main.postDelayed(rotate, ROTATE_MS); }
-    void stop() { main.removeCallbacks(rotate); }
 
     @Override public boolean onKeyDown(int code, KeyEvent ev) {
         if (items.size() > 1 && (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)) {
@@ -196,6 +187,8 @@ final class Hero extends FrameLayout {
             lp.rightMargin = dp(6);
             dots.addView(dot, lp);
         }
+        label.setVisibility(VISIBLE);
+        title.setVisibility(VISIBLE);
         if (it[0].startsWith(APP)) {
             showApp(it[0].substring(APP.length()));
             return;
@@ -205,12 +198,16 @@ final class Hero extends FrameLayout {
         blur(false);
         Bitmap bm = thumbs.get(it[0]);
         if (bm != null) crossfade(bm);
-        else fetch(it[0]);
+        else if (it.length > 3) fetch(it[0], it[3]); // título de Netflix, Prime… con su imagen de TMDB
+        else fetch(it[0], "https://i.ytimg.com/vi/" + it[0] + "/maxresdefault.jpg", "https://i.ytimg.com/vi/" + it[0] + "/hqdefault.jpg");
     }
 
     /** Diapositiva de app: su banner de Android TV nítido a la derecha y desenfocado de fondo. */
     private void showApp(String pkg) {
         play.setText("Abrir");
+        // de las apps, solo su logo
+        label.setVisibility(GONE);
+        title.setVisibility(GONE);
         PackageManager pm = getContext().getPackageManager();
         Drawable banner = null;
         try {
@@ -232,7 +229,7 @@ final class Hero extends FrameLayout {
 
     private void blur(boolean on) {
         if (Build.VERSION.SDK_INT >= 31) {
-            img.setRenderEffect(on ? RenderEffect.createBlurEffect(40f, 40f, Shader.TileMode.CLAMP) : null);
+            img.setRenderEffect(null); // el desenfoque en GPU de esta caja es muy caro
         }
     }
 
@@ -243,11 +240,11 @@ final class Hero extends FrameLayout {
         }).start();
     }
 
-    /** Miniatura grande (maxres); si el video no la tiene, la de alta calidad. */
-    private void fetch(final String id) {
+    /** La primera imagen que baje (en YouTube, maxres y si el video no la tiene, la de alta calidad). */
+    private void fetch(final String id, final String... urls) {
         new Thread(() -> {
-            Bitmap bm = download("https://i.ytimg.com/vi/" + id + "/maxresdefault.jpg");
-            if (bm == null) bm = download("https://i.ytimg.com/vi/" + id + "/hqdefault.jpg");
+            Bitmap bm = null;
+            for (int i = 0; bm == null && i < urls.length; i++) bm = download(urls[i]);
             if (bm == null) return;
             final Bitmap got = bm;
             main.post(() -> {
@@ -264,7 +261,9 @@ final class Hero extends FrameLayout {
             c.setReadTimeout(8000);
             if (c.getResponseCode() != 200) return null;
             InputStream in = c.getInputStream();
-            Bitmap bm = BitmapFactory.decodeStream(in);
+            BitmapFactory.Options o = new BitmapFactory.Options();
+            o.inPreferredConfig = Bitmap.Config.RGB_565; // fotos sin transparencia: la mitad de memoria
+            Bitmap bm = BitmapFactory.decodeStream(in, null, o);
             in.close();
             return bm;
         } catch (Exception e) { return null; }

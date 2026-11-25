@@ -55,6 +55,10 @@ powershell -ExecutionPolicy Bypass -File instalar.ps1 -Ip 192.168.1.3 -SinYoutub
 - `-SinYoutube` quita YouTube y YouTube Music del sistema (úsalo si vas a ver YouTube en TizenTube).
 - `-SinNetflix` quita Netflix. Quítalo del comando si el amigo sí usa Netflix.
 - Quita **solo** lo que existe en ese equipo; lo que no esté, lo ignora.
+- `-SinOptimizar` no aplica el ahorro de RAM (paso 6). `-Sin720` lo aplica pero deja la interfaz en 1080p.
+- `-SoloOptimizar` aplica **solo** el ahorro de RAM en una caja que ya estaba instalada (no toca nada más); con `-Restaurar` lo revierte.
+
+**Ahorro de RAM (paso 6, la caja tiene 2 GB):** a las apps de terceros les quita el segundo plano y el arranque automático; desactiva el protector de pantalla, el asistente de voz (el botón del micrófono deja de funcionar), la voz de TalkBack y el interruptor del micrófono; limita los procesos en caché a 4 y congela los inactivos; y dibuja la interfaz a 1280×720 (densidad 213), porque la GPU no aguanta 1080p con fluidez (la TV escala la imagen). Además el launcher cierra en segundo plano las otras apps al abrir una. Es reversible con `-SoloOptimizar -Restaurar`.
 
 El script hace, en orden:
 1. Quita bloat y rastreo (reversible): anuncios de Android 14, personalización en el dispositivo, aprendizaje federado, Health Connect, calendarios, Nearby, impresión, feedback, TalkBack, juegos de Google.
@@ -155,6 +159,7 @@ Si algo queda muy mal: Ajustes → Sistema → Restablecer (borra apps y cuentas
 - TizenTube abre videos con `https://www.youtube.com/tv?v=ID` sobre el paquete `io.gh.reisxd.tizentube.cobalt`.
 - Recomendaciones (sin claves ni cuenta), aprendidas solo de lo que se ve en la caja, intercaladas y sin repetir lo ya visto: las sugerencias que YouTube muestra junto a tus 3 últimos videos y lo nuevo de los canales que ves. Nada genérico: si no hay de dónde sacar, la fila se oculta. Se recalculan cada 30 min o al ver algo nuevo, y la última lista se guarda para mostrarse al instante.
 - Clima: la ubicación es la que Google calcula en la caja por Wi-Fi (permiso `ACCESS_COARSE_LOCATION`, `instalar.ps1` lo da con `pm grant`); el nombre del lugar sale de `api.bigdatacloud.net` y, si no hay ubicación, se usa la IP (`ipwho.is`). `api.open-meteo.com` da el clima, el amanecer y el atardecer (cada 20 min). Ninguno pide clave.
+- Red: la ficha junto a la hora muestra la señal y el nombre del Wi-Fi (o "Cable") y abre los ajustes de red de la caja. Android 10+ no deja que una app apague o cambie el Wi-Fi por su cuenta, por eso abre el panel del sistema. El nombre de la red necesita `ACCESS_FINE_LOCATION` (`instalar.ps1` lo da con `pm grant`).
 - Frecuencia de la tele: `settings put secure match_content_frame_rate 2` ("Siempre") hace que la tele cambie a 24/30/60 Hz según el video. `instalar.ps1` lo deja así. Solo funciona si la app de video pide su frecuencia.
 - El respaldo `botones.json` (versión 2) también guarda historial, canales y recomendaciones, y se restauran solos al reinstalar.
 - Compilar la APK desde el código: `powershell -ExecutionPolicy Bypass -File compilar.ps1`. Hace aapt2 → javac (--release 8) → d8 → zipalign → apksigner y deja `remap.apk` en la carpeta. Necesita un JDK 17+ y el SDK de Android (`platforms;android-37.0` y `build-tools;36.0.0`, en `%LOCALAPPDATA%\Android\Sdk`). El código fuente está en `app/`.

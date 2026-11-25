@@ -8,12 +8,11 @@ import android.content.pm.PackageManager;
 import android.graphics.Outline;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
-import android.graphics.drawable.GradientDrawable;
-import android.graphics.drawable.StateListDrawable;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
@@ -25,7 +24,11 @@ import android.widget.TextView;
 import android.widget.Toast;
 import java.io.File;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 import java.util.function.Supplier;
 
@@ -34,12 +37,17 @@ public class SettingsActivity extends Activity {
     private LauncherSettings st;
     private Theme theme;
     private LinearLayout col;
+    private FrameLayout frame;
+    private int phase;
     private final java.util.List<Runnable> refreshers = new java.util.ArrayList<>();
+    private Orderable moving; // lista en modo mover (flechas cambian el puesto), o null
+    private int movingAt;
+    private boolean okDown;
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         st = new LauncherSettings(this);
-        int phase = Weather.phase(null);
+        phase = Weather.phase(null);
         theme = Theme.current(this, phase);
 
         col = new LinearLayout(this);
@@ -63,16 +71,18 @@ public class SettingsActivity extends Activity {
         col.addView(head);
 
         buildButtons();
+        buildOrder();
         buildLook();
         buildApps();
         buildPlayback();
+        buildCatalog();
         buildBackup();
 
         ScrollView sv = new ScrollView(this);
         sv.setClipChildren(false);
         sv.addView(col);
-        FrameLayout frame = new FrameLayout(this);
-        frame.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR, Theme.background(this, phase)));
+        frame = new FrameLayout(this);
+        frame.setBackground(Theme.backdrop(this, phase));
         frame.addView(sv, new FrameLayout.LayoutParams(-1, -1));
         setContentView(frame);
     }
@@ -80,6 +90,36 @@ public class SettingsActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         for (Runnable r : refreshers) r.run(); // p. ej. permisos que se activaron fuera
+        if (frame.getBackground() instanceof Animated) ((Animated) frame.getBackground()).start(); // vista previa del fondo
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        if (moving != null) moving.finish();
+        if (frame.getBackground() instanceof Animated) ((Animated) frame.getBackground()).stop();
+    }
+
+    /** En modo mover: ↑↓ cambian la fila de puesto; OK o Atrás terminan y guardan. */
+    @Override public boolean dispatchKeyEvent(KeyEvent e) {
+        if (moving == null) return super.dispatchKeyEvent(e);
+        switch (e.getKeyCode()) {
+            case KeyEvent.KEYCODE_DPAD_UP:
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+                if (e.getAction() == KeyEvent.ACTION_DOWN) moving.moveBy(e.getKeyCode() == KeyEvent.KEYCODE_DPAD_UP ? -1 : 1);
+                return true;
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+            case KeyEvent.KEYCODE_DPAD_RIGHT:
+                return true;
+            case KeyEvent.KEYCODE_DPAD_CENTER:
+            case KeyEvent.KEYCODE_ENTER:
+            case KeyEvent.KEYCODE_BACK:
+                // el OK que eligió "Mover" en el menú suelta aquí: solo cuenta uno pulsado después
+                if (e.getAction() == KeyEvent.ACTION_DOWN) okDown = true;
+                else if (okDown) moving.finish();
+                return true;
+            default:
+                return super.dispatchKeyEvent(e);
+        }
     }
 
     // ---------- secciones ----------
@@ -89,6 +129,68 @@ public class SettingsActivity extends Activity {
         row(null, "Botones del control", "Elige qué app abre cada botón del control.",
                 () -> new Prefs(this).mappedKeys().size() + " configurados  ›",
                 () -> startActivity(new Intent(this, MainActivity.class)));
+    }
+
+    /** Filas del inicio: las que se ven, en orden (OK: mover o quitar), y debajo las que se pueden agregar. */
+    private void buildOrder() {
+        section("Filas del inicio");
+        final List<String> ids = new ArrayList<>(Arrays.asList("apps", "seguir", "youtube", "porque"));
+        for (Object[] r : Catalog.cachedRows(this)) addOnce(ids, Catalog.sectionOf(r));
+        // también las apps de contenido sin fila todavía (o quitadas), para poder agregarlas
+        for (String pkg : Catalog.cachedServices(this, null).keySet()) addOnce(ids, "pop:" + pkg);
+        for (String pkg : Catalog.screenApps(this)) addOnce(ids, "pop:" + pkg);
+        for (String[] it : Catalog.seen(this)) addOnce(ids, "seguir:" + it[3]); // Seguir mirando en Xuper, Netflix…
+        final List<String> shown = new ArrayList<>(), hidden = new ArrayList<>();
+        for (String id : st.sectionOrder(ids)) (st.isRowHidden(id) ? hidden : shown).add(id);
+        final Runnable save = () -> {
+            List<String> all = new ArrayList<>(shown);
+            all.addAll(hidden);
+            st.setSectionOrder(all);
+        };
+        final Orderable list = new Orderable(shown, save);
+        for (final String id : shown) {
+            list.add(row(rowIcon(id), sectionName(id), null, () -> "›",
+                    () -> menu(sectionName(id), new String[]{"Mover", "Quitar del inicio"}, w -> {
+                        if (w == 0) list.startMove(id);
+                        else {
+                            st.setRowHidden(id, true);
+                            recreate();
+                        }
+                    })));
+        }
+        if (Catalog.enabled() && Catalog.cachedServices(this, null).isEmpty()) {
+            row(null, "Popular en tus apps", "Tus apps de streaming aparecen aquí después de abrir el inicio con internet.", () -> "", null);
+        }
+        if (hidden.isEmpty()) return;
+        subsection("Agregar filas");
+        for (final String id : hidden) {
+            row(rowIcon(id), sectionName(id), null, () -> "+  Agregar", () -> {
+                st.setRowHidden(id, false);
+                hidden.remove(id);
+                shown.add(id); // entra al final
+                save.run();
+                recreate();
+            });
+        }
+    }
+
+    private static void addOnce(List<String> l, String id) { if (!l.contains(id)) l.add(id); }
+
+    private Drawable rowIcon(String id) {
+        String pkg = id.startsWith("pop:") ? id.substring(4) : id.startsWith("seguir:") ? id.substring(7) : null;
+        if (pkg == null) return null;
+        try { return getPackageManager().getApplicationIcon(pkg); } catch (Exception e) { return null; }
+    }
+
+    private String sectionName(String id) {
+        switch (id) {
+            case "apps": return "Tus apps";
+            case "seguir": return "Seguir mirando en YouTube";
+            case "youtube": return "Recomendaciones de YouTube";
+            case "porque": return "Porque viste…";
+            default: return id.startsWith("seguir:") ? "Seguir mirando en " + Catalog.label(this, id.substring(7))
+                    : "Popular en " + Catalog.label(this, id.substring(4));
+        }
     }
 
     private void buildLook() {
@@ -109,21 +211,65 @@ public class SettingsActivity extends Activity {
                 });
         toggle("Banner grande", "Videos recomendados y tus apps de streaming arriba del inicio.", "banner", st::showHero);
         toggle("Clima", "Temperatura y lugar junto a la hora.", "clima", st::showWeather);
+        toggle("Red", "Señal y nombre del Wi-Fi junto a la hora; OK abre los ajustes de red.", "wifi", st::showWifi);
         toggle("Fondo con la miniatura", "Al enfocar un video, su imagen desenfocada de fondo.", "fondo", st::showBackdrop);
     }
 
+    private static String backgroundName(String b) {
+        switch (b) {
+            case "aurora:cielo": return "Aurora · Cielo";
+            case "aurora:atardecer": return "Aurora · Atardecer";
+            case "aurora:oceano": return "Aurora · Océano";
+            case "aurora:bosque": return "Aurora · Bosque";
+            case "aurora:neon": return "Aurora · Neón";
+            case "estrellas": return "Estrellas";
+            default: return "Sin animación";
+        }
+    }
+
+    /** Apps del inicio: las visibles en orden (OK: mover u ocultar) y debajo las ocultas para volver a mostrarlas. */
     private void buildApps() {
         section("Apps del inicio");
+        final Prefs prefs = new Prefs(this);
+        final List<Prefs.AppEntry> all = prefs.listApps(true);
+        final List<String> shown = new ArrayList<>();
+        final List<Prefs.AppEntry> hidden = new ArrayList<>();
+        for (Prefs.AppEntry a : all) {
+            if (st.isHidden(a.pkg)) hidden.add(a);
+            else shown.add(a.pkg);
+        }
+        final Orderable list = new Orderable(shown, () -> {
+            // las visibles en su orden nuevo; las ocultas quedan detrás
+            List<Prefs.AppEntry> out = new ArrayList<>();
+            for (String p : shown) for (Prefs.AppEntry a : all) if (a.pkg.equals(p)) out.add(a);
+            out.addAll(hidden);
+            prefs.saveOrder(out);
+        });
+        for (final Prefs.AppEntry a : all) {
+            if (st.isHidden(a.pkg)) continue;
+            list.add(row(a.icon, a.label, null, () -> "›",
+                    () -> menu(a.label, new String[]{"Mover", "Ocultar del inicio"}, w -> {
+                        if (w == 0) list.startMove(a.pkg);
+                        else {
+                            st.setHidden(a.pkg, true);
+                            recreate();
+                        }
+                    })));
+        }
         row(null, "Restablecer el orden", "Vuelve al orden inicial; las apps que moviste regresan a su sitio.",
                 () -> "›",
                 () -> {
-                    new Prefs(this).resetOrder();
+                    prefs.resetOrder();
                     toast("Orden restablecido");
+                    recreate();
                 });
-        for (final Prefs.AppEntry a : new Prefs(this).listApps(true)) {
-            row(a.icon, a.label, null,
-                    () -> st.isHidden(a.pkg) ? "Oculta" : "Visible",
-                    () -> st.setHidden(a.pkg, !st.isHidden(a.pkg)));
+        if (hidden.isEmpty()) return;
+        subsection("Agregar apps");
+        for (final Prefs.AppEntry a : hidden) {
+            row(a.icon, a.label, null, () -> "+  Mostrar", () -> {
+                st.setHidden(a.pkg, false);
+                recreate();
+            });
         }
     }
 
@@ -139,13 +285,43 @@ public class SettingsActivity extends Activity {
                     int s = st.barCloseSeconds();
                     st.setBarCloseSeconds(s == 60 ? 300 : s == 300 ? 0 : 60);
                 });
-        toggle("Recomendaciones de YouTube", "Sugerencias de lo que ves en TizenTube o YouTube.", "recomendaciones", st::showReco);
         row(null, "Borrar historial y recomendaciones", "Vacía \"Seguir mirando\", los canales aprendidos y las recomendaciones.",
                 () -> "›",
                 () -> confirm("¿Borrar el historial?", "Se borran \"Seguir mirando\", los canales aprendidos, las recomendaciones y los minutos guardados.", () -> {
                     Videos.clear(this);
                     toast("Historial borrado");
                 }));
+    }
+
+    private void buildCatalog() {
+        section("Contenido de tus apps");
+        if (!Catalog.enabled()) {
+            row(null, "Catálogo sin configurar", "Esta versión se compiló sin la clave de TMDB (tmdb.key): solo se aprende lo que ves.", () -> "", null);
+        }
+        toggle("Aprender lo que veo", "Anota lo que pones en Netflix, Prime, Claro, Paramount+… para \"Seguir mirando\" y \"Porque viste\".",
+                "aprender", st::learnApps);
+        row(null, "País del catálogo", "Lo que hay en cada app cambia según el país.",
+                () -> {
+                    String c = st.country();
+                    if (!c.isEmpty()) return new Locale("", c).getDisplayCountry(new Locale("es"));
+                    String auto = Catalog.autoCountry(this);
+                    return "Automático" + (auto.isEmpty() ? "" : " (" + new Locale("", auto).getDisplayCountry(new Locale("es")) + ")");
+                },
+                () -> {
+                    java.util.List<String> all = java.util.Arrays.asList(Catalog.COUNTRIES);
+                    st.setCountry(Catalog.COUNTRIES[(all.indexOf(st.country()) + 1) % Catalog.COUNTRIES.length]);
+                });
+        row(null, "Borrar lo aprendido", "Vacía lo que viste en tus apps y las filas del catálogo.",
+                () -> "›",
+                () -> confirm("¿Borrar lo aprendido?", "Se borra lo que viste en Netflix, Prime y las demás apps.", () -> {
+                    Catalog.clear(this);
+                    toast("Borrado");
+                }));
+        TextView credit = text("Catálogo y \"dónde verlo\": TMDB y JustWatch. Este producto usa la API de TMDB pero no está avalado ni certificado por TMDB.",
+                13, theme.textSoft, false);
+        credit.setSingleLine(false);
+        credit.setPadding(dp(6), dp(4), 0, 0);
+        col.addView(credit);
     }
 
     private void buildBackup() {
@@ -177,7 +353,9 @@ public class SettingsActivity extends Activity {
                 Prefs::canBackup, null);
         permission("Ubicación", "Para el clima del lugar donde está la caja. Lo activa instalar.ps1.",
                 () -> checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED, null);
-        permission("Notificaciones", "Para saber qué ves en TizenTube o YouTube (Seguir mirando, barra).",
+        permission("Nombre del Wi-Fi", "Android solo deja leer el nombre de la red con ubicación precisa. Lo activa instalar.ps1.",
+                () -> checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED, null);
+        permission("Notificaciones", "Para saber qué ves en YouTube, Netflix, Prime… (Seguir mirando, Porque viste, barra).",
                 () -> {
                     String l = Settings.Secure.getString(getContentResolver(), "enabled_notification_listeners");
                     return l != null && l.contains(getPackageName() + "/");
@@ -211,7 +389,7 @@ public class SettingsActivity extends Activity {
     }
 
     /** Fila de cristal: ícono opcional, nombre, descripción y valor a la derecha. OK ejecuta la acción y refresca el valor. */
-    private void row(Drawable icon, String label, String desc, final Supplier<String> value, final Runnable action) {
+    private View row(Drawable icon, String label, String desc, final Supplier<String> value, final Runnable action) {
         LinearLayout r = new LinearLayout(this);
         r.setGravity(Gravity.CENTER_VERTICAL);
         r.setPadding(dp(20), dp(14), dp(24), dp(14));
@@ -247,6 +425,70 @@ public class SettingsActivity extends Activity {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.bottomMargin = dp(8);
         col.addView(r, lp);
+        return r;
+    }
+
+    private void subsection(String s) {
+        TextView t = text(s, 16, theme.textSoft, true);
+        t.setPadding(dp(6), dp(16), 0, dp(8));
+        col.addView(t);
+    }
+
+    private void menu(String title, String[] items, java.util.function.IntConsumer pick) {
+        new AlertDialog.Builder(this, theme.light ? android.R.style.Theme_DeviceDefault_Light_Dialog_Alert
+                : android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle(title)
+                .setItems(items, (d, w) -> pick.accept(w))
+                .show();
+    }
+
+    /**
+     * Filas seguidas de Ajustes que se pueden reordenar (filas del inicio, apps). Al mover se cambia de lado la fila
+     * vecina, no la enfocada, así el cursor no se pierde; al terminar se guarda el orden.
+     */
+    private final class Orderable {
+        final List<String> ids;
+        final Runnable save;
+        final List<View> views = new ArrayList<>();
+
+        Orderable(List<String> ids, Runnable save) {
+            this.ids = ids;
+            this.save = save;
+        }
+
+        void add(View v) { views.add(v); }
+
+        void startMove(String id) {
+            moving = this;
+            movingAt = ids.indexOf(id);
+            okDown = false;
+            value(movingAt, "↕  Moviendo");
+            views.get(movingAt).requestFocus();
+            toast("Muévela con ↑ ↓. OK o Atrás para terminar.");
+        }
+
+        void moveBy(int step) {
+            int i = movingAt, j = i + step;
+            if (j < 0 || j >= ids.size()) return;
+            final View a = views.get(i), b = views.get(j);
+            col.removeView(b);
+            col.addView(b, col.indexOfChild(a) + (step < 0 ? 1 : 0));
+            Collections.swap(ids, i, j);
+            Collections.swap(views, i, j);
+            movingAt = j;
+            a.post(() -> a.requestRectangleOnScreen(new android.graphics.Rect(0, -dp(60), a.getWidth(), a.getHeight() + dp(60))));
+        }
+
+        void finish() {
+            value(movingAt, "›");
+            moving = null;
+            save.run();
+        }
+
+        private void value(int i, String s) {
+            ViewGroup r = (ViewGroup) views.get(i);
+            ((TextView) r.getChildAt(r.getChildCount() - 1)).setText(s);
+        }
     }
 
     // ---------- ayudas ----------
@@ -273,20 +515,7 @@ public class SettingsActivity extends Activity {
         return t;
     }
 
-    private Drawable focusBg() {
-        StateListDrawable s = new StateListDrawable();
-        s.addState(new int[]{android.R.attr.state_focused}, box(theme.focus, 3, theme.focusStroke));
-        s.addState(new int[]{}, box(theme.glass, 1, theme.glassStroke));
-        return s;
-    }
-
-    private GradientDrawable box(int color, int stroke, int strokeColor) {
-        GradientDrawable g = new GradientDrawable();
-        g.setColor(color);
-        g.setCornerRadius(dp(16));
-        g.setStroke(dp(stroke), strokeColor);
-        return g;
-    }
+    private Drawable focusBg() { return Glass.panel(this, theme, 16); }
 
     private int dp(int v) { return Math.round(v * getResources().getDisplayMetrics().density); }
 }

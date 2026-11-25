@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ícono del clima a color (estilo multicolor de iOS): se lee sobre el fondo claro y el oscuro -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="32dp" android:height="32dp" android:viewportWidth="32" android:viewportHeight="32">
+    <group android:translateX="0" android:translateY="-6" android:scaleX="1" android:scaleY="1" android:pivotX="16" android:pivotY="19">
+        <path android:fillColor="#FFE6ECF5" android:strokeColor="#FF8797AE" android:strokeWidth="1.4" android:pathData="M9,25 L24,25 A5.5,5.5 0 0 0 24.6,14.03 A7.5,7.5 0 0 0 10.2,13.1 A6,6 0 0 0 9,25 Z" />
+    </group>
+    <path android:fillColor="#FFFFB800" android:pathData="M17,21 L12.5,27.5 L15.8,27.5 L14,31.5 L20,24.8 L16.6,24.8 L18.8,21 Z" />
+</vector>

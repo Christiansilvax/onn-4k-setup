@@ -92,15 +92,16 @@ final class Weather {
     }
 
     /** Icono según el código WMO. */
-    String icon() {
-        if (code == 0) return day ? "☀️" : "🌙";
-        if (code <= 2) return day ? "🌤️" : "☁️";
-        if (code == 3) return "☁️";
-        if (code == 45 || code == 48) return "🌫️";
-        if (code >= 95) return "⛈️";
-        if (code >= 71 && code <= 77 || code == 85 || code == 86) return "❄️";
-        if (code >= 80) return "🌦️";
-        return "🌧️";
+    /** Ícono a color (vector): los emoji de niebla o nubes son casi blancos y no se ven en el tema claro. */
+    int icon() {
+        if (code == 0) return day ? R.drawable.wx_sun : R.drawable.wx_moon;
+        if (code <= 2) return day ? R.drawable.wx_partly_day : R.drawable.wx_partly_night;
+        if (code == 3) return R.drawable.wx_cloud;
+        if (code == 45 || code == 48) return R.drawable.wx_fog;
+        if (code >= 95) return R.drawable.wx_storm;
+        if (code >= 71 && code <= 77 || code == 85 || code == 86) return R.drawable.wx_snow;
+        if (code >= 80) return day ? R.drawable.wx_showers : R.drawable.wx_rain;
+        return R.drawable.wx_rain;
     }
 
     String description() {

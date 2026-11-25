@@ -52,11 +52,19 @@ final class Videos {
         return pm.getLeanbackLaunchIntentForPackage(pkg) != null || pm.getLaunchIntentForPackage(pkg) != null;
     }
 
+    /** Quita un video de "Seguir mirando". */
+    static void forget(Context c, String id) {
+        List<String[]> h = history(c);
+        for (int i = h.size() - 1; i >= 0; i--) if (h.get(i)[0].equals(id)) h.remove(i);
+        sp(c).edit().putString("h", join(h, MAX_HISTORY)).apply();
+        new Prefs(c).backup();
+    }
+
     static void remember(Context c, String id, String name) {
         List<String[]> h = history(c);
         for (int i = h.size() - 1; i >= 0; i--) if (h.get(i)[0].equals(id)) h.remove(i);
         h.add(0, new String[]{id, name});
-        sp(c).edit().putString("h", join(h, MAX_HISTORY)).apply();
+        sp(c).edit().putString("h", join(h, MAX_HISTORY)).putLong("t_" + id, System.currentTimeMillis()).apply();
         new Prefs(c).backup();
         learnChannel(c, id);
     }
@@ -68,6 +76,9 @@ final class Videos {
         ed.commit();
         new Prefs(c).backup();
     }
+
+    /** Cuándo se vio por última vez (ms), o 0 si es de antes de guardarlo. */
+    static long seenAt(Context c, String id) { return sp(c).getLong("t_" + id, 0); }
 
     /** Dónde quedó un video y cuánto dura (ms), para continuar ahí y dibujar la barra roja. */
     static void savePosition(Context c, String id, long pos, long dur) {
