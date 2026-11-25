@@ -76,12 +76,8 @@ final class Theme {
 
     /** Fondo de pantalla: Aurora animable de día, degradado de siempre al atardecer y de noche. */
     static Drawable backdrop(Context c, int phase) {
-        Theme t = current(c, phase);
-        String bg = new LauncherSettings(c).background(); // el elegido en Ajustes (Fondo animado)
-        if (bg.startsWith("aurora:")) return Aurora.of(bg.substring(7), !t.light);
-        if (bg.equals("estrellas")) return new Stars(!t.light);
-        if (t.light) return new Aurora(t == forPhase(phase) && phase == Weather.DAWN).still(); // "auto": sin animación
-        return new GradientDrawable(GradientDrawable.Orientation.TL_BR, background(c, phase));
+        // un solo fondo fijo (el cielo de estrellas): sin animaciones ni otras opciones que gasten GPU
+        return new Stars(!current(c, phase).light);
     }
 
     /**
@@ -94,7 +90,7 @@ final class Theme {
             t.setShadowLayer(0f, 0f, 0f, 0);
         } else {
             t.setTypeface(Typeface.DEFAULT_BOLD);
-            t.setShadowLayer(10f, 0f, 2f, 0xCC000000);
+            t.setShadowLayer(0f, 0f, 0f, 0); // la sombra borrosa de cada texto cuesta mucha GPU en esta caja
         }
     }
 

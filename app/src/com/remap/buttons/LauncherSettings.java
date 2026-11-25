@@ -27,7 +27,7 @@ final class LauncherSettings {
     boolean showHero() { return sp.getBoolean("banner", true); }
     boolean showWeather() { return sp.getBoolean("clima", true); }
     boolean showWifi() { return sp.getBoolean("wifi", true); }
-    boolean showBackdrop() { return sp.getBoolean("fondo", true); }
+    boolean showBackdrop() { return sp.getBoolean("fondo", false); } // la miniatura de fondo cuesta una capa entera
     boolean showBar() { return sp.getBoolean("barra", true); }
     boolean showReco() { return sp.getBoolean("recomendaciones", true); }
     /** Anotar lo que se ve en Netflix, Prime, Claro… (ver Catalog). */

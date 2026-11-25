@@ -1,5 +1,6 @@
 package com.remap.buttons;
 
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
 import android.graphics.LinearGradient;
@@ -8,14 +9,11 @@ import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
-import android.os.Handler;
-import android.os.Looper;
-import android.os.SystemClock;
 import java.util.Random;
 
 /**
- * Fondo de partículas: de noche, estrellas que titilan y suben muy despacio sobre un azul profundo; de día, puntos
- * de luz suaves sobre el blanco frío. Todo se calcula al crearlo: cada cuadro solo dibuja círculos (unos 8 por segundo).
+ * Fondo fijo: de noche, estrellas sobre un azul profundo; de día, puntos de luz suaves sobre el blanco frío. Se pinta
+ * una sola vez en un bitmap y la pantalla solo lo pega: sin animación ni temporizadores (la GPU de la caja es justa).
  */
 final class Stars extends Drawable implements Animated {
     private static final int N = 70;
@@ -23,15 +21,8 @@ final class Stars extends Drawable implements Animated {
     private final float[] x = new float[N], y = new float[N], r = new float[N], rise = new float[N], blink = new float[N], phase = new float[N];
     private final Paint basePaint = new Paint(), dot = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final int top, bottom;
-    private final long t0 = SystemClock.uptimeMillis();
-    private final Handler main = new Handler(Looper.getMainLooper());
-    private final Runnable tick = new Runnable() {
-        @Override public void run() {
-            invalidateSelf();
-            main.postDelayed(this, 125); // 8 por segundo: las estrellas son chicas y suben despacio
-        }
-    };
-    private boolean running;
+    private final Paint out = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
+    private Bitmap cache;
     private int alpha = 255;
 
     Stars(boolean dark) {
@@ -52,36 +43,32 @@ final class Stars extends Drawable implements Animated {
 
     @Override protected void onBoundsChange(Rect b) {
         basePaint.setShader(new LinearGradient(0, b.top, 0, b.bottom, top, bottom, Shader.TileMode.CLAMP));
-    }
-
-    @Override public void draw(Canvas c) {
-        Rect b = getBounds();
-        c.drawRect(b, basePaint);
-        float s = (SystemClock.uptimeMillis() - t0) / 1000f;
+        if (b.isEmpty()) return;
+        cache = Bitmap.createBitmap(b.width(), b.height(), Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(cache);
+        c.drawRect(0, 0, b.width(), b.height(), basePaint);
+        float s = 12f; // un instante cualquiera: así las estrellas quedan repartidas y a distintos brillos
         for (int i = 0; i < N; i++) {
             float yy = y[i] - s * rise[i];
-            yy -= (float) Math.floor(yy); // al salir por arriba vuelve por abajo
+            yy -= (float) Math.floor(yy);
             float glow = 0.3f + 0.7f * (0.5f + 0.5f * (float) Math.sin(s * blink[i] + phase[i]));
-            dot.setAlpha(Math.round(glow * alpha));
-            c.drawCircle(b.left + x[i] * b.width(), b.top + yy * b.height(), r[i], dot);
+            dot.setAlpha(Math.round(glow * 255));
+            c.drawCircle(x[i] * b.width(), yy * b.height(), r[i], dot);
         }
     }
 
-    @Override public void start() {
-        if (running) return;
-        running = true;
-        main.post(tick);
+    @Override public void draw(Canvas c) {
+        if (cache != null) c.drawBitmap(cache, null, getBounds(), out);
     }
 
-    @Override public void stop() {
-        running = false;
-        main.removeCallbacks(tick);
-    }
+    @Override public void start() { }
+
+    @Override public void stop() { }
 
     /** El fundido entre fases (TransitionDrawable) cambia la opacidad. */
     @Override public void setAlpha(int a) {
         alpha = a;
-        basePaint.setAlpha(a);
+        out.setAlpha(a);
         invalidateSelf();
     }
 

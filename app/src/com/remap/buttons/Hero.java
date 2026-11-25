@@ -229,7 +229,7 @@ final class Hero extends FrameLayout {
 
     private void blur(boolean on) {
         if (Build.VERSION.SDK_INT >= 31) {
-            img.setRenderEffect(on ? RenderEffect.createBlurEffect(40f, 40f, Shader.TileMode.CLAMP) : null);
+            img.setRenderEffect(null); // el desenfoque en GPU de esta caja es muy caro
         }
     }
 

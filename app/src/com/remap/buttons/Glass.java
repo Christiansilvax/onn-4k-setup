@@ -6,7 +6,6 @@ import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.LayerDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.view.View;
-import android.view.animation.OvershootInterpolator;
 
 /**
  * Cristal de los botones y tarjetas. De noche: translúcido con borde fino que brilla al enfocar (como siempre).
@@ -42,20 +41,10 @@ final class Glass {
         return s;
     }
 
-    /** Agranda el elemento enfocado y lo eleva; de día con rebote y sombra del color del tema. */
+    /** Agranda un poco el elemento enfocado. Sin elevación ni sombras: cada sombra cuesta un pase extra de GPU. */
     static void lift(View v, Theme t, boolean has, float scale) {
-        float k = has ? scale : 1f;
-        if (t.light) {
-            v.animate().scaleX(k).scaleY(k).setDuration(260).setInterpolator(new OvershootInterpolator(1.2f)).start();
-            v.setElevation(has ? dp(v.getContext(), 18) : 0f);
-            if (android.os.Build.VERSION.SDK_INT >= 28) {
-                v.setOutlineSpotShadowColor(t.shadow);
-                v.setOutlineAmbientShadowColor(t.shadow);
-            }
-        } else {
-            v.animate().scaleX(k).scaleY(k).setDuration(150).start();
-            v.setElevation(has ? 24f : 0f);
-        }
+        float k = has ? Math.min(scale, 1.05f) : 1f;
+        v.animate().scaleX(k).scaleY(k).setDuration(110).start();
     }
 
     private static final int[] FOCUSED = {android.R.attr.state_focused};

@@ -82,11 +82,8 @@ public class HomeActivity extends Activity {
         backdrop.setAlpha(0f);
         // sin RenderEffect: desenfocar la pantalla entera en la GPU de esta caja traba todo (ver soft())
         frame.addView(backdrop, new FrameLayout.LayoutParams(-1, -1));
-        scrim = new View(this);
-        scrim.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{theme.scrimTop, theme.scrimMid, theme.scrimBottom}));
-        if (theme.light) scrim.setAlpha(0f); // de día el velo llega con la miniatura: sin ella se ve la Aurora limpia
-        frame.addView(scrim, new FrameLayout.LayoutParams(-1, -1));
+        scrim = new View(this); // sin velo a pantalla completa: era otra capa más para la GPU; se deja por compatibilidad
+        scrim.setVisibility(View.GONE);
         ScrollView sv = new ScrollView(this);
         sv.setFillViewport(true);
         root = new LinearLayout(this);
@@ -95,7 +92,6 @@ public class HomeActivity extends Activity {
         sv.addView(root);
         // el contenido queda en una capa ya dibujada: cuando solo se mueve el fondo la GPU la pega tal cual, en vez
         // de redibujar tarjetas, cristal y sombras en cada cuadro (en esta caja eso tomaba ~70 ms)
-        sv.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         frame.addView(sv, new FrameLayout.LayoutParams(-1, -1));
         setContentView(frame);
         buildTop();

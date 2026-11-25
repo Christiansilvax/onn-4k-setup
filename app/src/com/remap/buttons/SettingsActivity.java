@@ -212,16 +212,6 @@ public class SettingsActivity extends Activity {
         toggle("Banner grande", "Videos recomendados y tus apps de streaming arriba del inicio.", "banner", st::showHero);
         toggle("Clima", "Temperatura y lugar junto a la hora.", "clima", st::showWeather);
         toggle("Red", "Señal y nombre del Wi-Fi junto a la hora; OK abre los ajustes de red.", "wifi", st::showWifi);
-        row(null, "Fondo animado", "Se mueve solo mientras ves el inicio; al abrir una app se detiene.",
-                () -> backgroundName(st.background()),
-                () -> {
-                    List<String> all = Arrays.asList(LauncherSettings.BACKGROUNDS);
-                    st.setBackground(LauncherSettings.BACKGROUNDS[(all.indexOf(st.background()) + 1) % all.size()]);
-                    // vista previa aquí mismo, sin perder el cursor
-                    if (frame.getBackground() instanceof Animated) ((Animated) frame.getBackground()).stop();
-                    frame.setBackground(Theme.backdrop(this, phase));
-                    if (frame.getBackground() instanceof Animated) ((Animated) frame.getBackground()).start();
-                });
         toggle("Fondo con la miniatura", "Al enfocar un video, su imagen desenfocada de fondo.", "fondo", st::showBackdrop);
     }
 
